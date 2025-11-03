@@ -13,8 +13,13 @@ edition = "2024"
 
 [dependencies]
 ctrlc = { version = "3", features = ["termination"] }
-dirs = "6"
 uni_error = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+dirs = "6"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"

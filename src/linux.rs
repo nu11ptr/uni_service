@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use uni_error::SimpleError;
 
 use crate::unix::write_file;
-use crate::{Result, ServiceManager};
+use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/etc/systemd/system";
 const SYSTEM_CTL: &str = "systemctl";
@@ -14,7 +14,7 @@ const SERVICE_PERMS: u32 = 0o644;
 
 pub(crate) fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
     // systemd?
-    if SystemDServiceManager::system_ctl("", &name, false).is_ok() {
+    if SystemDServiceManager::system_ctl("", &name, false, true).is_ok() {
         Some(Box::new(SystemDServiceManager { name }))
     } else {
         None
@@ -26,7 +26,7 @@ struct SystemDServiceManager {
 }
 
 impl SystemDServiceManager {
-    fn system_ctl(sub_cmd: &str, name: &OsStr, user: bool) -> Result<()> {
+    fn system_ctl(sub_cmd: &str, name: &OsStr, user: bool, expect_success: bool) -> Result<bool> {
         let mut command = Command::new(SYSTEM_CTL);
 
         command
@@ -44,10 +44,12 @@ impl SystemDServiceManager {
 
         let output = command.output()?;
         if output.status.success() {
-            Ok(())
-        } else {
+            Ok(true)
+        } else if expect_success {
             let msg = String::from_utf8(output.stderr)?;
             Err(SimpleError::from_context(msg.trim().to_string()).into())
+        } else {
+            Ok(false)
         }
     }
 
@@ -104,12 +106,13 @@ WantedBy={wanted_by}
         let file = path.join(format!("{}.service", self.name.to_string_lossy()));
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        Self::system_ctl("enable", &self.name, user)
+        Self::system_ctl("enable", &self.name, user, true)?;
+        Ok(())
     }
 
     fn uninstall(&self, user: bool) -> Result<()> {
         // First disable service...
-        Self::system_ctl("disable", &self.name, user)?;
+        Self::system_ctl("disable", &self.name, user, true)?;
 
         // ...then wipe service file
         let path = Self::path(user)?;
@@ -119,10 +122,22 @@ WantedBy={wanted_by}
     }
 
     fn start(&self, user: bool) -> Result<()> {
-        Self::system_ctl("start", &self.name, user)
+        Self::system_ctl("start", &self.name, user, true)?;
+        Ok(())
     }
 
     fn stop(&self, user: bool) -> Result<()> {
-        Self::system_ctl("stop", &self.name, user)
+        Self::system_ctl("stop", &self.name, user, true)?;
+        Ok(())
+    }
+
+    fn status(&self, user: bool) -> Result<ServiceStatus> {
+        Self::system_ctl("is-active", &self.name, user, false).map(|is_active| {
+            if is_active {
+                ServiceStatus::Running
+            } else {
+                ServiceStatus::Stopped
+            }
+        })
     }
 }

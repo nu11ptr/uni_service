@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use uni_error::SimpleError;
 
 use crate::unix::write_file;
-use crate::{Result, ServiceManager};
+use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
 const LAUNCH_CTL: &str = "launchctl";
@@ -27,7 +27,7 @@ struct LaunchDServiceManager {
 }
 
 impl LaunchDServiceManager {
-    fn launch_ctl(sub_cmd: &str, target: &OsStr) -> Result<()> {
+    fn launch_ctl(sub_cmd: &str, target: &OsStr) -> Result<String> {
         let mut command = Command::new(LAUNCH_CTL);
 
         command
@@ -45,7 +45,7 @@ impl LaunchDServiceManager {
 
         let output = command.output()?;
         if output.status.success() {
-            Ok(())
+            Ok(String::from_utf8(output.stdout)?)
         } else {
             let msg = String::from_utf8(output.stderr)?;
             Err(SimpleError::from_context(msg.trim().to_string()).into())
@@ -65,10 +65,17 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn make_qualified(name: &OsStr, suffix: bool) -> OsString {
+    fn make_qualified(name: &OsStr, user: bool, file_ext: bool) -> OsString {
         let mut s = OsString::from(QUALIFIER_PREFIX);
+        if user {
+            let uid = unsafe { libc::getuid() };
+            s.push("user/");
+            s.push(uid.to_string());
+        } else {
+            s.push("system/");
+        }
         s.push(name);
-        if suffix {
+        if file_ext {
             s.push(".plist");
         }
         s
@@ -113,22 +120,23 @@ impl ServiceManager for LaunchDServiceManager {
     </dict>
 </plist>
 "#,
-            Self::make_qualified(&self.name, false).to_string_lossy(),
+            Self::make_qualified(&self.name, user, false).to_string_lossy(),
         );
 
         // Create directories and install
         let path = Self::path(user)?;
         fs::create_dir_all(&path)?;
-        let file = path.join(Self::make_qualified(&self.name, true));
+        let file = path.join(Self::make_qualified(&self.name, user, true));
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        Self::launch_ctl("enable", file.as_ref())
+        Self::launch_ctl("enable", file.as_ref())?;
+        Ok(())
     }
 
     fn uninstall(&self, user: bool) -> Result<()> {
         // First calculate file path and unload
         let path = Self::path(user)?;
-        let file = path.join(Self::make_qualified(&self.name, true));
+        let file = path.join(Self::make_qualified(&self.name, user, true));
         Self::launch_ctl("disable", file.as_ref())?;
 
         // ...then wipe service file
@@ -136,11 +144,23 @@ impl ServiceManager for LaunchDServiceManager {
         Ok(())
     }
 
-    fn start(&self, _user: bool) -> Result<()> {
-        Self::launch_ctl("start", &Self::make_qualified(&self.name, false))
+    fn start(&self, user: bool) -> Result<()> {
+        Self::launch_ctl("start", &Self::make_qualified(&self.name, user, false))?;
+        Ok(())
     }
 
-    fn stop(&self, _user: bool) -> Result<()> {
-        Self::launch_ctl("stop", &Self::make_qualified(&self.name, false))
+    fn stop(&self, user: bool) -> Result<()> {
+        Self::launch_ctl("stop", &Self::make_qualified(&self.name, user, false))?;
+        Ok(())
+    }
+
+    fn status(&self, user: bool) -> Result<ServiceStatus> {
+        Self::launch_ctl("print", &Self::make_qualified(&self.name, user, false)).map(|status| {
+            if status.contains("state = running") {
+                ServiceStatus::Running
+            } else {
+                ServiceStatus::Stopped
+            }
+        })
     }
 }

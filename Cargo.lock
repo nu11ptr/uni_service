@@ -58,7 +58,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -205,6 +205,7 @@ version = "0.1.0"
 dependencies = [
  "ctrlc",
  "dirs",
+ "libc",
  "uni_error",
  "windows-service",
 ]

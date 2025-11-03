@@ -8,7 +8,8 @@ use std::time::Duration;
 use uni_error::SimpleError;
 use windows_service::service::{
     ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
-    ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
+    ServiceInfo, ServiceStartType, ServiceState, ServiceStatus as WindowsServiceStatus,
+    ServiceType,
 };
 use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::service_manager::ServiceManagerAccess;
@@ -16,7 +17,7 @@ use windows_service::{
     define_windows_service, service_control_handler, service_dispatcher, service_manager,
 };
 
-use crate::{Result, ServiceApp, ServiceManager};
+use crate::{Result, ServiceApp, ServiceManager, ServiceStatus};
 
 const MAX_WAIT: u32 = 50; // 5 seconds
 
@@ -53,7 +54,7 @@ impl ServiceControlHandler {
             ServiceControlAccept::empty()
         };
 
-        self.0.set_service_status(ServiceStatus {
+        self.0.set_service_status(WindowsServiceStatus {
             service_type: ServiceType::OWN_PROCESS,
             current_state,
             controls_accepted,
@@ -275,6 +276,28 @@ impl ServiceManager for WinServiceManager {
             }
         } else {
             Ok(())
+        }
+    }
+
+    fn status(&self, user: bool) -> Result<ServiceStatus> {
+        Self::check_for_user_service(user)?;
+
+        let manager_access = ServiceManagerAccess::CONNECT;
+        let service_manager =
+            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
+
+        let service_access = ServiceAccess::QUERY_STATUS;
+        let service = service_manager.open_service(&self.name, service_access)?;
+        let service_status = service.query_status()?;
+
+        match service_status.current_state {
+            ServiceState::Running => Ok(ServiceStatus::Running),
+            ServiceState::Stopped => Ok(ServiceStatus::Stopped),
+            ServiceState::StartPending => Ok(ServiceStatus::StartPending),
+            ServiceState::StopPending => Ok(ServiceStatus::StopPending),
+            ServiceState::ContinuePending => Ok(ServiceStatus::ContinuePending),
+            ServiceState::PausePending => Ok(ServiceStatus::PausePending),
+            ServiceState::Paused => Ok(ServiceStatus::Paused),
         }
     }
 }

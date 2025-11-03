@@ -25,6 +25,7 @@ use windows::{make_service_manager, start_service};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// A service application.
 pub trait ServiceApp: Debug {
     fn name(&self) -> &str;
 
@@ -33,8 +34,9 @@ pub trait ServiceApp: Debug {
     fn stop(&mut self) -> Result<()>;
 }
 
-// Windows operates in two possible modes: regular or services mode
-// UNIX variants operate just in regular mode
+// NOTE: Windows operates in two possible modes: regular or services mode. UNIX variants operate just in regular mode
+/// Executes a service. If being started by the service manager, `service_mode` must be `true`.
+/// If being started interactively, `service_mode` must be `false`.
 pub fn run_service(mut app: Box<dyn ServiceApp + Send>, service_mode: bool) -> Result<()> {
     if service_mode {
         start_service(app)
@@ -55,6 +57,20 @@ fn wait_for_shutdown() -> Result<()> {
     Ok(())
 }
 
+// *** Status ***
+
+/// The status of a service. Windows services can be in any of these states.
+/// Linux/macOS services will only ever either be `Running` or `Stopped`.
+pub enum ServiceStatus {
+    Stopped,
+    StartPending,
+    StopPending,
+    Running,
+    ContinuePending,
+    PausePending,
+    Paused,
+}
+
 // *** Service Manager ***
 
 /// The service manager is a trait for lifecycle management of a given service
@@ -73,6 +89,8 @@ pub trait ServiceManager {
     fn start(&self, user: bool) -> Result<()>;
 
     fn stop(&self, user: bool) -> Result<()>;
+
+    fn status(&self, user: bool) -> Result<ServiceStatus>;
 }
 
 pub fn new_service_manager(name: OsString) -> Result<Box<dyn ServiceManager>> {
