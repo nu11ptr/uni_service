@@ -3,31 +3,42 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use uni_error::SimpleError;
+use uni_error::{SimpleError, SimpleResult};
 
-use crate::unix::write_file;
+use crate::unix::{SERVICE_PERMS, write_file};
 use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
 const LAUNCH_CTL: &str = "launchctl";
-const SERVICE_PERMS: u32 = 0o644;
-const QUALIFIER_PREFIX: &str = "com.apisw.";
 
-pub(crate) fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
-    // launchd? (must be a valid subcommand else returns exit code 1)
-    if LaunchDServiceManager::launch_ctl("list", "".as_ref()).is_ok() {
-        Some(Box::new(LaunchDServiceManager { name }))
-    } else {
-        None
-    }
+pub(crate) fn make_service_manager(
+    name: OsString,
+    prefix: OsString,
+    user: bool,
+) -> SimpleResult<Box<dyn ServiceManager>> {
+    LaunchDServiceManager::new(name, prefix, user)
+        .map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
 struct LaunchDServiceManager {
     name: OsString,
+    prefix: OsString,
+    user: bool,
 }
 
 impl LaunchDServiceManager {
-    fn launch_ctl(sub_cmd: &str, target: &OsStr) -> Result<String> {
+    fn new(name: OsString, prefix: OsString, user: bool) -> SimpleResult<Self> {
+        // launchd? (must be a valid subcommand else returns exit code 1)
+        if Self::launch_ctl("list", None).is_ok() {
+            Ok(Self { name, prefix, user })
+        } else {
+            Err(SimpleError::from_context(
+                "launchd is not available on this system",
+            ))
+        }
+    }
+
+    pub fn launch_ctl(sub_cmd: &str, target: Option<&OsStr>) -> Result<String> {
         let mut command = Command::new(LAUNCH_CTL);
 
         command
@@ -39,7 +50,7 @@ impl LaunchDServiceManager {
             command.arg(sub_cmd);
         }
 
-        if !target.is_empty() {
+        if let Some(target) = target {
             command.arg(target);
         }
 
@@ -52,8 +63,8 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn path(user: bool) -> Result<PathBuf> {
-        if user {
+    fn path(&self) -> Result<PathBuf> {
+        if self.user {
             Ok(dirs::config_dir()
                 .ok_or_else(|| {
                     SimpleError::from_context("Unable to locate the user's home directory")
@@ -65,16 +76,20 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn make_qualified(name: &OsStr, user: bool, file_ext: bool) -> OsString {
-        let mut s = OsString::from(QUALIFIER_PREFIX);
-        if user {
+    fn make_qualified_name(&self, file_ext: bool) -> OsString {
+        let mut s = self.prefix.clone();
+
+        if self.user {
             let uid = unsafe { libc::getuid() };
             s.push("user/");
             s.push(uid.to_string());
+            s.push("/");
         } else {
             s.push("system/");
         }
-        s.push(name);
+
+        s.push(&self.name);
+
         if file_ext {
             s.push(".plist");
         }
@@ -89,7 +104,6 @@ impl ServiceManager for LaunchDServiceManager {
         args: Vec<OsString>,
         _display_name: OsString,
         _desc: OsString,
-        user: bool,
     ) -> Result<()> {
         // Build service file
         let mut new_args: Vec<OsString> = Vec::with_capacity(args.len() + 1);
@@ -120,42 +134,42 @@ impl ServiceManager for LaunchDServiceManager {
     </dict>
 </plist>
 "#,
-            Self::make_qualified(&self.name, user, false).to_string_lossy(),
+            self.make_qualified_name(false).to_string_lossy(),
         );
 
         // Create directories and install
-        let path = Self::path(user)?;
+        let path = self.path()?;
         fs::create_dir_all(&path)?;
-        let file = path.join(Self::make_qualified(&self.name, user, true));
+        let file = path.join(self.make_qualified_name(true));
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        Self::launch_ctl("enable", file.as_ref())?;
+        Self::launch_ctl("enable", Some(file.as_ref()))?;
         Ok(())
     }
 
-    fn uninstall(&self, user: bool) -> Result<()> {
+    fn uninstall(&self) -> Result<()> {
         // First calculate file path and unload
-        let path = Self::path(user)?;
-        let file = path.join(Self::make_qualified(&self.name, user, true));
-        Self::launch_ctl("disable", file.as_ref())?;
+        let path = self.path()?;
+        let file = path.join(self.make_qualified_name(true));
+        Self::launch_ctl("disable", Some(file.as_ref()))?;
 
         // ...then wipe service file
         fs::remove_file(file)?;
         Ok(())
     }
 
-    fn start(&self, user: bool) -> Result<()> {
-        Self::launch_ctl("start", &Self::make_qualified(&self.name, user, false))?;
+    fn start(&self) -> Result<()> {
+        Self::launch_ctl("start", Some(self.make_qualified_name(false).as_ref()))?;
         Ok(())
     }
 
-    fn stop(&self, user: bool) -> Result<()> {
-        Self::launch_ctl("stop", &Self::make_qualified(&self.name, user, false))?;
+    fn stop(&self) -> Result<()> {
+        Self::launch_ctl("stop", Some(self.make_qualified_name(false).as_ref()))?;
         Ok(())
     }
 
-    fn status(&self, user: bool) -> Result<ServiceStatus> {
-        Self::launch_ctl("print", &Self::make_qualified(&self.name, user, false)).map(|status| {
+    fn status(&self) -> Result<ServiceStatus> {
+        Self::launch_ctl("print", Some(self.make_qualified_name(false).as_ref())).map(|status| {
             if status.contains("state = running") {
                 ServiceStatus::Running
             } else {

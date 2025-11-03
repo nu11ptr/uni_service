@@ -1,32 +1,44 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use uni_error::SimpleError;
+use uni_error::{SimpleError, SimpleResult};
 
-use crate::unix::write_file;
+use crate::unix::{SERVICE_PERMS, write_file};
 use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/etc/systemd/system";
 const SYSTEM_CTL: &str = "systemctl";
-const SERVICE_PERMS: u32 = 0o644;
 
-pub(crate) fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
-    // systemd?
-    if SystemDServiceManager::system_ctl("", &name, false, true).is_ok() {
-        Some(Box::new(SystemDServiceManager { name }))
-    } else {
-        None
-    }
+pub(crate) fn make_service_manager(
+    name: OsString,
+    _prefix: OsString,
+    user: bool,
+) -> SimpleResult<Box<dyn ServiceManager>> {
+    SystemDServiceManager::new(name, user).map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
 struct SystemDServiceManager {
     name: OsString,
+    user: bool,
 }
 
 impl SystemDServiceManager {
-    fn system_ctl(sub_cmd: &str, name: &OsStr, user: bool, expect_success: bool) -> Result<bool> {
+    fn new(name: OsString, user: bool) -> SimpleResult<Self> {
+        let mgr = Self { name, user };
+
+        // systemd exists?
+        if mgr.system_ctl(None, true).is_ok() {
+            Ok(mgr)
+        } else {
+            Err(SimpleError::from_context(
+                "systemd is not available on this system",
+            ))
+        }
+    }
+
+    fn system_ctl(&self, sub_cmd: Option<&str>, expect_success: bool) -> Result<bool> {
         let mut command = Command::new(SYSTEM_CTL);
 
         command
@@ -34,12 +46,12 @@ impl SystemDServiceManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        if user {
+        if self.user {
             command.arg("--user");
         }
 
-        if !sub_cmd.is_empty() {
-            command.arg(sub_cmd).arg(name);
+        if let Some(sub_cmd) = sub_cmd {
+            command.arg(sub_cmd).arg(&self.name);
         }
 
         let output = command.output()?;
@@ -53,8 +65,8 @@ impl SystemDServiceManager {
         }
     }
 
-    fn path(user: bool) -> Result<PathBuf> {
-        if user {
+    fn path(&self) -> Result<PathBuf> {
+        if self.user {
             Ok(dirs::config_dir()
                 .ok_or_else(|| {
                     SimpleError::from_context("Unable to locate the user's home directory")
@@ -74,10 +86,9 @@ impl ServiceManager for SystemDServiceManager {
         args: Vec<OsString>,
         _display_name: OsString,
         desc: OsString,
-        user: bool,
     ) -> Result<()> {
         // Build service file
-        let wanted_by = if user {
+        let wanted_by = if self.user {
             "default.target"
         } else {
             "multi-user.target"
@@ -101,38 +112,38 @@ WantedBy={wanted_by}
         );
 
         // Create directories and install
-        let path = Self::path(user)?;
+        let path = self.path()?;
         fs::create_dir_all(&path)?;
         let file = path.join(format!("{}.service", self.name.to_string_lossy()));
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        Self::system_ctl("enable", &self.name, user, true)?;
+        self.system_ctl(Some("enable"), true)?;
         Ok(())
     }
 
-    fn uninstall(&self, user: bool) -> Result<()> {
+    fn uninstall(&self) -> Result<()> {
         // First disable service...
-        Self::system_ctl("disable", &self.name, user, true)?;
+        self.system_ctl(Some("disable"), true)?;
 
         // ...then wipe service file
-        let path = Self::path(user)?;
+        let path = self.path()?;
         let file = path.join(format!("{}.service", self.name.to_string_lossy()));
         fs::remove_file(file)?;
         Ok(())
     }
 
-    fn start(&self, user: bool) -> Result<()> {
-        Self::system_ctl("start", &self.name, user, true)?;
+    fn start(&self) -> Result<()> {
+        self.system_ctl(Some("start"), true)?;
         Ok(())
     }
 
-    fn stop(&self, user: bool) -> Result<()> {
-        Self::system_ctl("stop", &self.name, user, true)?;
+    fn stop(&self) -> Result<()> {
+        self.system_ctl(Some("stop"), true)?;
         Ok(())
     }
 
-    fn status(&self, user: bool) -> Result<ServiceStatus> {
-        Self::system_ctl("is-active", &self.name, user, false).map(|is_active| {
+    fn status(&self) -> Result<ServiceStatus> {
+        self.system_ctl(Some("is-active"), false).map(|is_active| {
             if is_active {
                 ServiceStatus::Running
             } else {

@@ -5,11 +5,11 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use uni_error::SimpleError;
+use uni_error::{SimpleError, SimpleResult};
 use windows_service::service::{
-    ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
-    ServiceInfo, ServiceStartType, ServiceState, ServiceStatus as WindowsServiceStatus,
-    ServiceType,
+    Service as WindowsService, ServiceAccess, ServiceControl, ServiceControlAccept,
+    ServiceErrorControl, ServiceExitCode, ServiceInfo, ServiceStartType, ServiceState,
+    ServiceStatus as WindowsServiceStatus, ServiceType,
 };
 use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::service_manager::ServiceManagerAccess;
@@ -31,6 +31,8 @@ pub(crate) fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
 }
 
 define_windows_service!(ffi_service_main, service_main);
+
+// *** Service Control Handler ***
 
 struct ServiceControlHandler(ServiceStatusHandle);
 
@@ -75,6 +77,8 @@ impl Drop for ServiceControlHandler {
     }
 }
 
+// *** Service Main ***
+
 fn service_main(_arguments: Vec<OsString>) -> Result<()> {
     let (shutdown_tx, shutdown_rx) = channel();
 
@@ -109,21 +113,97 @@ fn service_main(_arguments: Vec<OsString>) -> Result<()> {
     // Drop of handle will automatically set status to Stopped
 }
 
-pub(crate) fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
-    Some(Box::new(WinServiceManager { name }))
+// *** make_service_manager ***
+
+pub(crate) fn make_service_manager(
+    name: OsString,
+    _prefix: OsString,
+    user: bool,
+) -> SimpleResult<Box<dyn ServiceManager>> {
+    if user {
+        Err(SimpleError::from_context(
+            "User level services are not available on Windows",
+        ))
+    } else {
+        Ok(Box::new(WinServiceManager { name }))
+    }
 }
+
+// *** WinServiceManager ***
 
 struct WinServiceManager {
     name: OsString,
 }
 
 impl WinServiceManager {
-    fn check_for_user_service(user: bool) -> Result<()> {
-        if user {
-            Err(
-                SimpleError::from_context("User level services are not available on Windows")
-                    .into(),
-            )
+    fn open_service(&self, flags: ServiceAccess) -> Result<WindowsService> {
+        let manager_access = ServiceManagerAccess::CONNECT;
+        let service_manager =
+            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
+        let service = service_manager.open_service(&self.name, flags)?;
+        Ok(service)
+    }
+
+    fn stop(service: &WindowsService) -> Result<()> {
+        service.stop()?;
+        Ok(())
+    }
+
+    fn start(service: &WindowsService) -> Result<()> {
+        service.start(&[OsStr::new("Starting...")])?;
+        Ok(())
+    }
+
+    fn change_state(&self, desired_state: ServiceState) -> Result<()> {
+        let (service_access, pending_state, change_state_fn): (
+            ServiceAccess,
+            ServiceState,
+            fn(&WindowsService) -> Result<()>,
+        ) = match desired_state {
+            ServiceState::Stopped => (ServiceAccess::STOP, ServiceState::Stopped, Self::stop),
+            ServiceState::Running => (
+                ServiceAccess::START,
+                ServiceState::StartPending,
+                Self::start,
+            ),
+            _ => {
+                unreachable!("Invalid service state");
+            }
+        };
+        let service = self.open_service(ServiceAccess::QUERY_STATUS | service_access)?;
+
+        let service_status = service.query_status()?;
+        if service_status.current_state != desired_state {
+            if service_status.current_state != pending_state {
+                change_state_fn(&service)?;
+            }
+
+            let mut changed = false;
+            let mut count = 0;
+            let mut service_status = service.query_status()?;
+
+            while service_status.current_state != desired_state {
+                // Wait for service to change state
+                thread::sleep(Duration::from_millis(100));
+
+                service_status = service.query_status()?;
+
+                if service_status.current_state == desired_state {
+                    changed = true;
+                    break;
+                } else {
+                    count += 1;
+                    if count >= MAX_WAIT {
+                        break;
+                    }
+                }
+            }
+
+            if changed {
+                Ok(())
+            } else {
+                Err(SimpleError::from_context("Service is not responding and may be hung").into())
+            }
         } else {
             Ok(())
         }
@@ -137,10 +217,7 @@ impl ServiceManager for WinServiceManager {
         _args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
-        user: bool,
     ) -> Result<()> {
-        Self::check_for_user_service(user)?;
-
         let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
         let service_manager =
             service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
@@ -164,130 +241,30 @@ impl ServiceManager for WinServiceManager {
         Ok(())
     }
 
-    fn uninstall(&self, user: bool) -> Result<()> {
-        Self::check_for_user_service(user)?;
-
-        let manager_access = ServiceManagerAccess::CONNECT;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
-
-        let service_access =
-            ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE;
-        let service = service_manager.open_service(&self.name, service_access)?;
+    fn uninstall(&self) -> Result<()> {
+        let service = self.open_service(
+            ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE,
+        )?;
 
         let service_status = service.query_status()?;
         if service_status.current_state != ServiceState::Stopped {
-            self.stop(user)?;
+            self.stop()?;
         }
 
         service.delete()?;
         Ok(())
     }
 
-    fn start(&self, user: bool) -> Result<()> {
-        Self::check_for_user_service(user)?;
-
-        let manager_access = ServiceManagerAccess::CONNECT;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
-
-        let service_access = ServiceAccess::QUERY_STATUS | ServiceAccess::START;
-        let service = service_manager.open_service(&self.name, service_access)?;
-
-        let service_status = service.query_status()?;
-        if service_status.current_state != ServiceState::Running {
-            if service_status.current_state != ServiceState::StartPending {
-                service.start(&[OsStr::new("Starting...")])?;
-            }
-
-            let mut started = false;
-            let mut count = 0;
-            let mut service_status = service.query_status()?;
-
-            while service_status.current_state != ServiceState::Running {
-                // Wait for service to stop
-                thread::sleep(Duration::from_millis(100));
-
-                service_status = service.query_status()?;
-
-                if service_status.current_state == ServiceState::Running {
-                    started = true;
-                    break;
-                } else {
-                    count += 1;
-                    if count >= MAX_WAIT {
-                        break;
-                    }
-                }
-            }
-
-            if started {
-                Ok(())
-            } else {
-                Err(SimpleError::from_context("Service is not responding and may be hung").into())
-            }
-        } else {
-            Ok(())
-        }
+    fn start(&self) -> Result<()> {
+        self.change_state(ServiceState::Running)
     }
 
-    // TODO: Extract a generic-like function and call from both start and stop?
-    fn stop(&self, user: bool) -> Result<()> {
-        Self::check_for_user_service(user)?;
-
-        let manager_access = ServiceManagerAccess::CONNECT;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
-
-        let service_access = ServiceAccess::QUERY_STATUS | ServiceAccess::STOP;
-        let service = service_manager.open_service(&self.name, service_access)?;
-
-        let service_status = service.query_status()?;
-        if service_status.current_state != ServiceState::Stopped {
-            if service_status.current_state != ServiceState::StopPending {
-                service.stop()?;
-            }
-
-            let mut stopped = false;
-            let mut count = 0;
-            let mut service_status = service.query_status()?;
-
-            while service_status.current_state != ServiceState::Stopped {
-                // Wait for service to stop
-                thread::sleep(Duration::from_millis(100));
-
-                service_status = service.query_status()?;
-
-                if service_status.current_state == ServiceState::Stopped {
-                    stopped = true;
-                    break;
-                } else {
-                    count += 1;
-                    if count >= MAX_WAIT {
-                        break;
-                    }
-                }
-            }
-
-            if stopped {
-                Ok(())
-            } else {
-                Err(SimpleError::from_context("Service is not responding and may be hung").into())
-            }
-        } else {
-            Ok(())
-        }
+    fn stop(&self) -> Result<()> {
+        self.change_state(ServiceState::Stopped)
     }
 
-    fn status(&self, user: bool) -> Result<ServiceStatus> {
-        Self::check_for_user_service(user)?;
-
-        let manager_access = ServiceManagerAccess::CONNECT;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
-
-        let service_access = ServiceAccess::QUERY_STATUS;
-        let service = service_manager.open_service(&self.name, service_access)?;
+    fn status(&self) -> Result<ServiceStatus> {
+        let service = self.open_service(ServiceAccess::QUERY_STATUS)?;
         let service_status = service.query_status()?;
 
         match service_status.current_state {

@@ -17,7 +17,12 @@ use std::{ffi::OsString, sync::mpsc::channel};
 use linux::make_service_manager;
 #[cfg(target_os = "macos")]
 use macos::make_service_manager;
-use uni_error::SimpleError;
+#[cfg(all(
+    not(target_os = "windows"),
+    not(target_os = "linux"),
+    not(target_os = "macos")
+))]
+use uni_error::{SimpleError, SimpleResult};
 #[cfg(windows)]
 use windows::{make_service_manager, start_service};
 
@@ -25,10 +30,14 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 
 /// A service application.
 pub trait ServiceApp: Debug {
+    /// Returns the name of the service.
     fn name(&self) -> &str;
 
+    /// Called when the service is started. It should do its work as
+    /// quickly as possible and return. It should not block indefinitely.
     fn start(&mut self) -> Result<()>;
 
+    /// Called when the service is stopped. It should do any cleanup necessary and return.
     fn stop(&mut self) -> Result<()>;
 }
 
@@ -79,22 +88,28 @@ pub enum ServiceStatus {
 
 /// The service manager is a trait for lifecycle management of a given service
 pub trait ServiceManager {
+    /// Installs the service. The `program` is the path to the executable to run when the service starts.
+    /// The `args` are the arguments to pass to the executable. The `display_name` is the name to display
+    /// to the user. The `desc` is the description of the service.
     fn install(
         &self,
         program: PathBuf,
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
-        user: bool,
     ) -> Result<()>;
 
-    fn uninstall(&self, user: bool) -> Result<()>;
+    /// Uninstalls the service.
+    fn uninstall(&self) -> Result<()>;
 
-    fn start(&self, user: bool) -> Result<()>;
+    /// Starts the service.
+    fn start(&self) -> Result<()>;
 
-    fn stop(&self, user: bool) -> Result<()>;
+    /// Stops the service.
+    fn stop(&self) -> Result<()>;
 
-    fn status(&self, user: bool) -> Result<ServiceStatus>;
+    /// Gets the status of the service.
+    fn status(&self) -> Result<ServiceStatus>;
 }
 
 #[cfg(all(
@@ -102,17 +117,25 @@ pub trait ServiceManager {
     not(target_os = "linux"),
     not(target_os = "macos")
 ))]
-fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
-    None
+fn make_service_manager(
+    _name: OsString,
+    _prefix: OsString,
+    _user: bool,
+) -> SimpleResult<Box<dyn ServiceManager>> {
+    Err(SimpleError::from_context(
+        "Service management is not available on this platform",
+    ))
 }
 
-/// Creates a new service manager for the given service name.
-pub fn new_service_manager(name: OsString) -> Result<Box<dyn ServiceManager>> {
-    match make_service_manager(name) {
-        Some(svc_mgr) => Ok(svc_mgr),
-        None => Err(SimpleError::from_context(
-            "Sorry, service management is not available on this platform",
-        )
-        .into()),
-    }
+/// Creates a new service manager for the given service name. The `prefix` is a java-style
+/// reverse domain name prefix (e.g. `com.example.`) and is only used on macOS (ignored on other
+/// platforms). If `user` is `true`, the service applies directly to the current user only.
+/// Windows does not support user-level services, so this is only available on macOS and Linux.
+pub fn new_service_manager(
+    name: impl Into<OsString>,
+    prefix: impl Into<OsString>,
+    user: bool,
+) -> Result<Box<dyn ServiceManager>> {
+    let svc_mgr = make_service_manager(name.into(), prefix.into(), user)?;
+    Ok(svc_mgr)
 }

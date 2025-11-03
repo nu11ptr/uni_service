@@ -5,6 +5,8 @@ use std::path::Path;
 
 use uni_error::SimpleResult;
 
+pub(crate) const SERVICE_PERMS: u32 = 0o644;
+
 pub(crate) fn write_file(path: &Path, data: &str, mode: u32) -> SimpleResult<()> {
     let mut options = fs::OpenOptions::new();
     options.create(true).write(true).mode(mode);
