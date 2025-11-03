@@ -18,8 +18,6 @@ use linux::make_service_manager;
 #[cfg(target_os = "macos")]
 use macos::make_service_manager;
 use uni_error::SimpleError;
-#[cfg(unix)]
-use unix::start_service;
 #[cfg(windows)]
 use windows::{make_service_manager, start_service};
 
@@ -32,6 +30,12 @@ pub trait ServiceApp: Debug {
     fn start(&mut self) -> Result<()>;
 
     fn stop(&mut self) -> Result<()>;
+}
+
+#[cfg(not(windows))]
+fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
+    // Won't endlessly loop because this is only called when service_mode is true
+    run_service(app, false)
 }
 
 // NOTE: Windows operates in two possible modes: regular or services mode. UNIX variants operate just in regular mode
@@ -93,6 +97,16 @@ pub trait ServiceManager {
     fn status(&self, user: bool) -> Result<ServiceStatus>;
 }
 
+#[cfg(all(
+    not(target_os = "windows"),
+    not(target_os = "linux"),
+    not(target_os = "macos")
+))]
+fn make_service_manager(name: OsString) -> Option<Box<dyn ServiceManager>> {
+    None
+}
+
+/// Creates a new service manager for the given service name.
 pub fn new_service_manager(name: OsString) -> Result<Box<dyn ServiceManager>> {
     match make_service_manager(name) {
         Some(svc_mgr) => Ok(svc_mgr),

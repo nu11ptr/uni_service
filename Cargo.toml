@@ -16,9 +16,10 @@ ctrlc = { version = "3", features = ["termination"] }
 uni_error = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+dirs = "6"
 libc = "0.2"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 dirs = "6"
 
 [target.'cfg(windows)'.dependencies]
