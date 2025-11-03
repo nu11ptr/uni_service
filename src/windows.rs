@@ -79,7 +79,13 @@ impl Drop for ServiceControlHandler {
 
 // *** Service Main ***
 
-fn service_main(_arguments: Vec<OsString>) -> Result<()> {
+fn service_main(_arguments: Vec<OsString>) {
+    if let Err(_err) = run_service() {
+        // TODO: Log error
+    }
+}
+
+fn run_service() -> Result<()> {
     let (shutdown_tx, shutdown_rx) = channel();
 
     let event_handler_fn = move |event| -> ServiceControlHandlerResult {
