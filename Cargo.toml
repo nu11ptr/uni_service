@@ -10,3 +10,11 @@ keywords = ["service", "daemon", "windows", "linux", "macos"]
 categories = ["api-bindings", "os"]
 readme = "README.md"
 edition = "2024"
+
+[dependencies]
+ctrlc = { version = "3", features = ["termination"] }
+dirs = "6"
+uni_error = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
