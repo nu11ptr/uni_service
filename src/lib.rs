@@ -9,7 +9,6 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 
-use std::fmt::Debug;
 use std::path::PathBuf;
 use std::{ffi::OsString, sync::mpsc::channel};
 
@@ -29,7 +28,7 @@ use windows::{make_service_manager, start_service};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A service application.
-pub trait ServiceApp: Debug {
+pub trait ServiceApp {
     /// Returns the name of the service.
     fn name(&self) -> &str;
 
@@ -74,6 +73,7 @@ fn wait_for_shutdown() -> Result<()> {
 
 /// The status of a service. Windows services can be in any of these states.
 /// Linux/macOS services will only ever either be `Running` or `Stopped`.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ServiceStatus {
     Stopped,
     StartPending,

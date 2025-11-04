@@ -24,3 +24,9 @@ dirs = "6"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"
+
+[workspace]
+members = ["test_bin"]
+
+[workspace.dependencies]
+uni_service = { path = "." }

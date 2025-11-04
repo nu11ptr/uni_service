@@ -65,7 +65,7 @@ impl LaunchDServiceManager {
 
     fn path(&self) -> Result<PathBuf> {
         if self.user {
-            Ok(dirs::config_dir()
+            Ok(dirs::home_dir()
                 .ok_or_else(|| {
                     SimpleError::from_context("Unable to locate the user's home directory")
                 })?
@@ -76,21 +76,24 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn make_qualified_name(&self, file_ext: bool) -> OsString {
-        let mut s = self.prefix.clone();
+    fn make_qualified_name(&self, is_filename: bool) -> OsString {
+        let mut s = OsString::new();
 
-        if self.user {
-            let uid = unsafe { libc::getuid() };
-            s.push("user/");
-            s.push(uid.to_string());
-            s.push("/");
-        } else {
-            s.push("system/");
+        if !is_filename {
+            if self.user {
+                let uid = unsafe { libc::getuid() };
+                s.push("user/");
+                s.push(uid.to_string());
+                s.push("/");
+            } else {
+                s.push("system/");
+            }
         }
 
+        s.push(self.prefix.clone());
         s.push(&self.name);
 
-        if file_ext {
+        if is_filename {
             s.push(".plist");
         }
         s
@@ -143,7 +146,7 @@ impl ServiceManager for LaunchDServiceManager {
         let file = path.join(self.make_qualified_name(true));
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        Self::launch_ctl("enable", Some(file.as_ref()))?;
+        Self::launch_ctl("enable", Some(self.make_qualified_name(false).as_ref()))?;
         Ok(())
     }
 
