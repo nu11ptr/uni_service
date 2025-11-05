@@ -1,33 +1,18 @@
-[package]
-name = "uni_service"
-version = "0.1.0"
-authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
-license = "MIT OR Apache-2.0"
-description = "A crate for for building cross platform OS services"
-repository = "https://github.com/nu11ptr/uni_service"
-documentation = "https://docs.rs/uni_service"
-keywords = ["service", "daemon", "windows", "linux", "macos"]
-categories = ["api-bindings", "os"]
-readme = "README.md"
-edition = "2024"
-
-[dependencies]
-ctrlc = { version = "3", features = ["termination"] }
-tracing = { version = "0.1", features = ["std"], default-features = false }
-uni_error = "0.1"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-dirs = "6"
-libc = "0.2"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-dirs = "6"
-
-[target.'cfg(windows)'.dependencies]
-windows-service = "0.8"
-
 [workspace]
-members = ["test_bin"]
+resolver = "2"
+members = ["manager", "service", "test_bin"]
 
 [workspace.dependencies]
-uni_service = { path = "." }
+uni_service = { path = "service" }
+uni_service_manager = { path = "manager" }
+
+ctrlc = { version = "3", features = ["termination"] }
+dirs = "6"
+libc = "0.2"
+tracing = { version = "0.1", features = ["std"], default-features = false }
+tracing-subscriber = { version = "0.3", features = [
+    "fmt",
+    "std",
+], default-features = false }
+uni_error = "0.1"
+windows-service = "0.8"

@@ -1,139 +1,19 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
-use std::sync::mpsc::channel;
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
 use uni_error::{SimpleError, SimpleResult};
 use windows_service::service::{
-    Service as WindowsService, ServiceAccess, ServiceControl, ServiceControlAccept,
-    ServiceErrorControl, ServiceExitCode, ServiceInfo, ServiceStartType, ServiceState,
-    ServiceStatus as WindowsServiceStatus, ServiceType,
+    Service as WindowsService, ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType,
+    ServiceState, ServiceType,
 };
-use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
+use windows_service::service_manager;
 use windows_service::service_manager::ServiceManagerAccess;
-use windows_service::{
-    define_windows_service, service_control_handler, service_dispatcher, service_manager,
-};
 
-use crate::{Result, ServiceApp, ServiceManager, ServiceStatus};
+use crate::{Result, ServiceManager, ServiceStatus};
 
 const MAX_WAIT: u32 = 50; // 5 seconds
-
-static SERVICE_APP: OnceLock<Mutex<Box<dyn ServiceApp + Send>>> = OnceLock::new();
-
-pub(crate) fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
-    let name = app.name().to_string();
-    if let Err(_) = SERVICE_APP.set(Mutex::new(app)) {
-        return Err(SimpleError::from_context(format!(
-            "Only one service can be registered, and '{name}' already is",
-        ))
-        .into());
-    }
-    service_dispatcher::start(&name, ffi_service_main)?;
-    Ok(())
-}
-
-define_windows_service!(ffi_service_main, service_main);
-
-// *** Service Control Handler ***
-
-struct ServiceControlHandler(ServiceStatusHandle);
-
-impl ServiceControlHandler {
-    fn register<F>(service_name: impl AsRef<OsStr>, event_handler: F) -> Result<Self>
-    where
-        F: FnMut(ServiceControl) -> ServiceControlHandlerResult + 'static + Send,
-    {
-        let handle = Self(service_control_handler::register(
-            service_name,
-            event_handler,
-        )?);
-        handle.set_status(ServiceState::StartPending)?;
-        Ok(handle)
-    }
-
-    fn set_status(&self, current_state: ServiceState) -> Result<()> {
-        let controls_accepted = if current_state != ServiceState::Stopped {
-            ServiceControlAccept::STOP
-        } else {
-            ServiceControlAccept::empty()
-        };
-
-        self.0.set_service_status(WindowsServiceStatus {
-            service_type: ServiceType::OWN_PROCESS,
-            current_state,
-            controls_accepted,
-            exit_code: ServiceExitCode::Win32(0),
-            checkpoint: 0,
-            wait_hint: Duration::default(),
-            process_id: None,
-        })?;
-        Ok(())
-    }
-}
-
-impl Drop for ServiceControlHandler {
-    fn drop(&mut self) {
-        if let Err(_err) = self.set_status(ServiceState::Stopped) {
-            // TODO: Log error
-        }
-    }
-}
-
-// *** Service Main ***
-
-fn service_main(_arguments: Vec<OsString>) {
-    if let Err(_err) = run_service() {
-        // TODO: Log error
-    }
-}
-
-fn run_service() -> Result<()> {
-    tracing::debug!("Service starting...");
-
-    let (shutdown_tx, shutdown_rx) = channel();
-
-    let event_handler_fn = move |event| -> ServiceControlHandlerResult {
-        tracing::debug!("Service control event received: {:?}", event);
-        match event {
-            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            ServiceControl::Stop => {
-                if let Err(_err) = shutdown_tx.send(()) {
-                    // TODO: Log error
-                }
-                ServiceControlHandlerResult::NoError
-            }
-            _ => ServiceControlHandlerResult::NotImplemented,
-        }
-    };
-
-    let mut app = SERVICE_APP
-        .get()
-        .expect("Missing service app")
-        .lock()
-        .expect("Mutex poisoned");
-    tracing::debug!("Registering service control handler");
-    let status_handle = ServiceControlHandler::register(app.name(), event_handler_fn)?;
-
-    tracing::debug!("Calling app's start method");
-    app.start()?;
-    status_handle.set_status(ServiceState::Running)?;
-
-    tracing::debug!("Waiting for shutdown signal");
-    shutdown_rx.recv()?;
-
-    tracing::debug!("Setting status to StopPending");
-    status_handle.set_status(ServiceState::StopPending)?;
-    app.stop()?;
-
-    // Drop of handle will automatically set status to Stopped
-    tracing::debug!("Service exiting...");
-    Ok(())
-}
-
-// *** make_service_manager ***
 
 pub(crate) fn make_service_manager(
     name: OsString,

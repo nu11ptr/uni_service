@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use uni_service::{ServiceStatus, new_service_manager};
+use uni_service_manager::{ServiceStatus, new_service_manager};
 
 static TRACING: OnceLock<()> = OnceLock::new();
 

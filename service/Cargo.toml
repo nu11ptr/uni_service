@@ -1,0 +1,20 @@
+[package]
+name = "uni_service"
+version = "0.1.0"
+authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "Universal service crate for building cross platform OS services"
+repository = "https://github.com/nu11ptr/uni_service"
+documentation = "https://docs.rs/uni_service"
+keywords = ["service", "daemon", "windows", "linux", "macos"]
+categories = ["api-bindings", "os"]
+readme = "README.md"
+edition = "2024"
+
+[dependencies]
+ctrlc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+tracing.workspace = true
+uni_error.workspace = true
+windows-service.workspace = true

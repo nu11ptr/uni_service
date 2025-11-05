@@ -207,6 +207,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uni_service",
+ "uni_service_manager",
 ]
 
 [[package]]
@@ -279,6 +280,15 @@ name = "uni_service"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
+ "tracing",
+ "uni_error",
+ "windows-service",
+]
+
+[[package]]
+name = "uni_service_manager"
+version = "0.1.0"
+dependencies = [
  "dirs",
  "libc",
  "tracing",

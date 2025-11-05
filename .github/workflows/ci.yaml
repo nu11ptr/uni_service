@@ -62,13 +62,10 @@ jobs:
             tool: cargo-nextest, cargo-llvm-cov
 
         - name: Run tests
-          run: cargo test --workspace
-
-        - name: Run tests without default features
-          run: cargo test --no-default-features --workspace
+          run: cargo test
 
         - name: Run tests with coverage
-          run: cargo llvm-cov nextest --output-path codecov.json --codecov --workspace
+          run: cargo llvm-cov nextest --output-path codecov.json --codecov
 
         - name: Upload coverage reports to Codecov
           uses: codecov/codecov-action@v5

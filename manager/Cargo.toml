@@ -1,0 +1,26 @@
+[package]
+name = "uni_service_manager"
+version = "0.1.0"
+authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "A crate for for managing cross platform OS services"
+repository = "https://github.com/nu11ptr/uni_service"
+documentation = "https://docs.rs/uni_service_manager"
+keywords = ["service", "daemon", "windows", "linux", "macos"]
+categories = ["api-bindings", "os"]
+readme = "README.md"
+edition = "2024"
+
+[dependencies]
+tracing.workspace = true
+uni_error.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+dirs.workspace = true
+libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dirs.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-service.workspace = true
