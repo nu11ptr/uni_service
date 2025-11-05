@@ -129,15 +129,9 @@ fn run_service() -> Result<()> {
 pub(crate) fn make_service_manager(
     name: OsString,
     _prefix: OsString,
-    user: bool,
+    _user: bool,
 ) -> SimpleResult<Box<dyn ServiceManager>> {
-    if user {
-        Err(SimpleError::from_context(
-            "User level services are not available on Windows",
-        ))
-    } else {
-        Ok(Box::new(WinServiceManager { name }))
-    }
+    Ok(Box::new(WinServiceManager { name }))
 }
 
 // *** WinServiceManager ***
