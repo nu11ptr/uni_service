@@ -25,6 +25,12 @@ fn main() {
         None => false,
     };
 
+    if service_mode {
+        println!("Running as a service");
+    } else {
+        println!("Running in interactive mode");
+    }
+
     if let Err(e) = run_service(Box::new(TestService {}), service_mode) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
