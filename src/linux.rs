@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 
 use uni_error::{SimpleError, SimpleResult};
 
@@ -38,7 +38,7 @@ impl SystemDServiceManager {
         }
     }
 
-    fn system_ctl(&self, sub_cmd: Option<&str>, expect_success: bool) -> Result<bool> {
+    fn system_ctl(&self, sub_cmd: Option<&str>, expect_success: bool) -> Result<ExitStatus> {
         let mut command = Command::new(SYSTEM_CTL);
 
         command
@@ -55,13 +55,11 @@ impl SystemDServiceManager {
         }
 
         let output = command.output()?;
-        if output.status.success() {
-            Ok(true)
-        } else if expect_success {
+        if output.status.success() || !expect_success {
+            Ok(output.status)
+        } else {
             let msg = String::from_utf8(output.stderr)?;
             Err(SimpleError::from_context(msg.trim().to_string()).into())
-        } else {
-            Ok(false)
         }
     }
 
@@ -143,12 +141,21 @@ WantedBy={wanted_by}
     }
 
     fn status(&self) -> Result<ServiceStatus> {
-        self.system_ctl(Some("is-active"), false).map(|is_active| {
-            if is_active {
-                ServiceStatus::Running
-            } else {
-                ServiceStatus::Stopped
+        match self.system_ctl(Some("status"), false) {
+            Ok(exit_status) => {
+                if exit_status.success() {
+                    Ok(ServiceStatus::Running)
+                } else {
+                    match exit_status.code() {
+                        Some(3) => Ok(ServiceStatus::Stopped),
+                        // Likely exit code is 4 below, but we'll take anything
+                        _ => Err(
+                            SimpleError::from_context("Unknown error or service not found").into(),
+                        ),
+                    }
+                }
             }
-        })
+            Err(err) => Err(err),
+        }
     }
 }
