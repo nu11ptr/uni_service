@@ -50,7 +50,7 @@ impl ServiceControlHandler {
             service_name,
             event_handler,
         )?);
-        handle.set_status(ServiceState::StartPending)?;
+        handle.set_status(ServiceState::Running)?;
         Ok(handle)
     }
 
@@ -114,7 +114,6 @@ fn run_service() -> Result<()> {
     let status_handle = ServiceControlHandler::register(app.name(), event_handler_fn)?;
 
     app.start()?;
-    status_handle.set_status(ServiceState::Running)?;
 
     shutdown_rx.recv()?;
 
@@ -165,7 +164,7 @@ impl WinServiceManager {
             ServiceState,
             fn(&WindowsService) -> Result<()>,
         ) = match desired_state {
-            ServiceState::Stopped => (ServiceAccess::STOP, ServiceState::Stopped, Self::stop),
+            ServiceState::Stopped => (ServiceAccess::STOP, ServiceState::StopPending, Self::stop),
             ServiceState::Running => (
                 ServiceAccess::START,
                 ServiceState::StartPending,
@@ -219,7 +218,7 @@ impl ServiceManager for WinServiceManager {
     fn install(
         &self,
         program: PathBuf,
-        _args: Vec<OsString>,
+        args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
     ) -> Result<()> {
@@ -234,7 +233,7 @@ impl ServiceManager for WinServiceManager {
             start_type: ServiceStartType::OnDemand,
             error_control: ServiceErrorControl::Normal,
             executable_path: program,
-            launch_arguments: vec![OsString::from("service")],
+            launch_arguments: args,
             dependencies: vec![],
             account_name: None, // TODO: Handle alternate users?
             account_password: None,
@@ -251,12 +250,16 @@ impl ServiceManager for WinServiceManager {
             ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE,
         )?;
 
+        service.delete()?;
         let service_status = service.query_status()?;
         if service_status.current_state != ServiceState::Stopped {
             self.stop()?;
         }
 
-        service.delete()?;
+        // TODO: Consider dropping the service explicitly (either via block or drop) and then
+        // query the service to see if it's really gone.
+        // (see: https://github.com/mullvad/windows-service-rs/blob/main/examples/uninstall_service.rs)
+
         Ok(())
     }
 
