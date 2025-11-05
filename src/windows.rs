@@ -25,7 +25,12 @@ static SERVICE_APP: OnceLock<Mutex<Box<dyn ServiceApp + Send>>> = OnceLock::new(
 
 pub(crate) fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
     let name = app.name().to_string();
-    SERVICE_APP.set(Mutex::new(app)).unwrap();
+    if let Err(_) = SERVICE_APP.set(Mutex::new(app)) {
+        return Err(SimpleError::from_context(format!(
+            "Only one service can be registered, and '{name}' already is",
+        ))
+        .into());
+    }
     service_dispatcher::start(&name, ffi_service_main)?;
     Ok(())
 }
