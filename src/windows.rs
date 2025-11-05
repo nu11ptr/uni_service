@@ -50,7 +50,7 @@ impl ServiceControlHandler {
             service_name,
             event_handler,
         )?);
-        handle.set_status(ServiceState::Running)?;
+        handle.set_status(ServiceState::StartPending)?;
         Ok(handle)
     }
 
@@ -91,9 +91,12 @@ fn service_main(_arguments: Vec<OsString>) {
 }
 
 fn run_service() -> Result<()> {
+    tracing::debug!("Service starting...");
+
     let (shutdown_tx, shutdown_rx) = channel();
 
     let event_handler_fn = move |event| -> ServiceControlHandlerResult {
+        tracing::debug!("Service control event received: {:?}", event);
         match event {
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
             ServiceControl::Stop => {
@@ -111,16 +114,23 @@ fn run_service() -> Result<()> {
         .expect("Missing service app")
         .lock()
         .expect("Mutex poisoned");
+    tracing::debug!("Registering service control handler");
     let status_handle = ServiceControlHandler::register(app.name(), event_handler_fn)?;
 
+    tracing::debug!("Calling app's start method");
     app.start()?;
+    status_handle.set_status(ServiceState::Running)?;
 
+    tracing::debug!("Waiting for shutdown signal");
     shutdown_rx.recv()?;
 
+    tracing::debug!("Setting status to StopPending");
     status_handle.set_status(ServiceState::StopPending)?;
-    app.stop()
+    app.stop()?;
 
     // Drop of handle will automatically set status to Stopped
+    tracing::debug!("Service exiting...");
+    Ok(())
 }
 
 // *** make_service_manager ***
@@ -141,6 +151,7 @@ struct WinServiceManager {
 
 impl WinServiceManager {
     fn open_service(&self, flags: ServiceAccess) -> Result<WindowsService> {
+        tracing::debug!("Opening service: {:?}", self.name);
         let manager_access = ServiceManagerAccess::CONNECT;
         let service_manager =
             service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
@@ -149,11 +160,13 @@ impl WinServiceManager {
     }
 
     fn stop(service: &WindowsService) -> Result<()> {
+        tracing::debug!("Attempting to stop service");
         service.stop()?;
         Ok(())
     }
 
     fn start(service: &WindowsService) -> Result<()> {
+        tracing::debug!("Attempting to start service");
         service.start(&[OsStr::new("Starting...")])?;
         Ok(())
     }
@@ -174,10 +187,16 @@ impl WinServiceManager {
                 unreachable!("Invalid service state");
             }
         };
+        tracing::debug!("Opening service: {:?}", self.name);
         let service = self.open_service(ServiceAccess::QUERY_STATUS | service_access)?;
 
         let service_status = service.query_status()?;
         if service_status.current_state != desired_state {
+            tracing::debug!(
+                "Service is not in the desired state: {:?}, current state: {:?}",
+                desired_state,
+                service_status.current_state
+            );
             if service_status.current_state != pending_state {
                 change_state_fn(&service)?;
             }
@@ -193,9 +212,15 @@ impl WinServiceManager {
                 service_status = service.query_status()?;
 
                 if service_status.current_state == desired_state {
+                    tracing::debug!("Service is now in the desired state: {:?}", desired_state);
                     changed = true;
                     break;
                 } else {
+                    tracing::debug!(
+                        "Service is still not in the desired state: {:?}, current state: {:?}. Trying again...",
+                        desired_state,
+                        service_status.current_state
+                    );
                     count += 1;
                     if count >= MAX_WAIT {
                         break;
@@ -209,6 +234,10 @@ impl WinServiceManager {
                 Err(SimpleError::from_context("Service is not responding and may be hung").into())
             }
         } else {
+            tracing::debug!(
+                "Service is already in the desired state: {:?}",
+                desired_state
+            );
             Ok(())
         }
     }
@@ -238,6 +267,7 @@ impl ServiceManager for WinServiceManager {
             account_name: None, // TODO: Handle alternate users?
             account_password: None,
         };
+        tracing::debug!("Creating service: {:?}", service_info);
         let service =
             service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
         service.set_description(&desc)?;
@@ -246,10 +276,12 @@ impl ServiceManager for WinServiceManager {
     }
 
     fn uninstall(&self) -> Result<()> {
+        tracing::debug!("Opening service: {:?}", self.name);
         let service = self.open_service(
             ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE,
         )?;
 
+        tracing::debug!("Deleting service");
         service.delete()?;
         let service_status = service.query_status()?;
         if service_status.current_state != ServiceState::Stopped {
@@ -272,6 +304,7 @@ impl ServiceManager for WinServiceManager {
     }
 
     fn status(&self) -> Result<ServiceStatus> {
+        tracing::debug!("Opening service: {:?}", self.name);
         let service = self.open_service(ServiceAccess::QUERY_STATUS)?;
         let service_status = service.query_status()?;
 

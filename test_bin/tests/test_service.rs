@@ -1,4 +1,18 @@
+use std::sync::OnceLock;
+
 use uni_service::{ServiceManager, ServiceStatus, new_service_manager};
+
+static TRACING: OnceLock<()> = OnceLock::new();
+
+fn init_tracing() {
+    TRACING.get_or_init(|| {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_target(false)
+            .with_test_writer() // ensures logs go to test output
+            .init()
+    });
+}
 
 fn service_stopped_or_err(manager: &dyn ServiceManager) -> bool {
     #[cfg(not(target_os = "linux"))]
@@ -10,6 +24,8 @@ fn service_stopped_or_err(manager: &dyn ServiceManager) -> bool {
 
 #[test]
 fn test_service() {
+    init_tracing();
+
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 

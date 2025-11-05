@@ -54,7 +54,9 @@ impl LaunchDServiceManager {
             command.arg(arg);
         }
 
+        tracing::debug!("Executing command: {:?}", command);
         let output = command.output()?;
+
         if output.status.success() {
             Ok(String::from_utf8(output.stdout)?)
         } else {

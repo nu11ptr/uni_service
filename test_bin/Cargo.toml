@@ -5,3 +5,10 @@ edition = "2024"
 
 [dependencies]
 uni_service.workspace = true
+
+[dev-dependencies]
+tracing = { version = "0.1", features = ["std"], default-features = false }
+tracing-subscriber = { version = "0.3", features = [
+    "fmt",
+    "std",
+], default-features = false }

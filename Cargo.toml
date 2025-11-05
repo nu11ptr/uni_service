@@ -13,6 +13,7 @@ edition = "2024"
 
 [dependencies]
 ctrlc = { version = "3", features = ["termination"] }
+tracing = { version = "0.1", features = ["std"], default-features = false }
 uni_error = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
