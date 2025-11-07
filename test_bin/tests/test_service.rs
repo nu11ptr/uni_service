@@ -7,7 +7,6 @@ use uni_service_manager::{ServiceStatus, new_service_manager};
 
 use crate::common::TcpServer;
 
-const SERVER_ADDRESS: &str = "127.0.0.1:53164";
 const SERVER_TIMEOUT: Duration = Duration::from_secs(3);
 
 static TRACING: OnceLock<()> = OnceLock::new();
@@ -24,6 +23,7 @@ fn init_tracing() {
 
 #[test]
 fn test_service_interactive() {
+    const SERVER_ADDRESS: &str = "127.0.0.1:53164";
     init_tracing();
 
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
@@ -47,6 +47,7 @@ fn test_service_interactive() {
 
 #[test]
 fn test_service() {
+    const SERVER_ADDRESS: &str = "127.0.0.1:53165";
     init_tracing();
 
     // Cargo sets this env var to the path of the built executable
