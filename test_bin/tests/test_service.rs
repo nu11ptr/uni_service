@@ -1,6 +1,6 @@
 mod common;
 
-use std::{process::Command, sync::OnceLock, time::Duration};
+use std::{process::Command, sync::OnceLock, thread, time::Duration};
 
 use send_ctrlc::{Interruptible as _, InterruptibleCommand as _};
 use uni_service_manager::{ServiceStatus, new_service_manager};
@@ -58,18 +58,34 @@ fn test_service() {
     manager
         .install(
             bin_path.into(),
-            vec!["service".into()],
+            vec!["service".into(), SERVER_ADDRESS.into()],
             "Test service".into(),
             "Test service description".into(),
         )
         .unwrap();
     assert_eq!(manager.status().unwrap(), ServiceStatus::Stopped);
 
+    let handle = thread::spawn(move || {
+        let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
+        server.wait_for_connection(SERVER_TIMEOUT).unwrap();
+        server
+    });
     manager.start().unwrap();
+
+    let mut server = handle.join().unwrap();
+    server.expect_message("service", SERVER_TIMEOUT).unwrap();
+    server.expect_message("starting", SERVER_TIMEOUT).unwrap();
+    server.expect_message("running", SERVER_TIMEOUT).unwrap();
     assert_eq!(manager.status().unwrap(), ServiceStatus::Running);
 
+    let handle = thread::spawn(move || {
+        server.expect_message("stopping", SERVER_TIMEOUT).unwrap();
+        server.expect_message("quitting", SERVER_TIMEOUT).unwrap();
+    });
     manager.stop().unwrap();
     assert_eq!(manager.status().unwrap(), ServiceStatus::Stopped);
+    handle.join().unwrap();
+    // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
 
     manager.uninstall().unwrap();
     assert!(manager.status().is_err());
