@@ -2,7 +2,7 @@ mod common;
 
 use std::{process::Command, sync::OnceLock, time::Duration};
 
-use send_ctrlc::Interruptible as _;
+use send_ctrlc::{Interruptible as _, InterruptibleCommand as _};
 use uni_service_manager::{ServiceStatus, new_service_manager};
 
 use crate::common::TcpServer;
@@ -27,7 +27,10 @@ fn test_service_interactive() {
     init_tracing();
 
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
-    let mut command = Command::new(bin_path).arg(SERVER_ADDRESS).spawn().unwrap();
+    let mut command = Command::new(bin_path)
+        .arg(SERVER_ADDRESS)
+        .spawn_interruptible()
+        .unwrap();
 
     let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
     server.wait_for_connection(SERVER_TIMEOUT).unwrap();

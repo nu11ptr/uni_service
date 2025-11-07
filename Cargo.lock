@@ -246,9 +246,9 @@ dependencies = [
 
 [[package]]
 name = "send_ctrlc"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805b42a62eaf5aaad1de490fa5fde9a288cdac2f31ac13f4c633f7ec4e57a0d1"
+checksum = "c8182f442992d3e60c64568a5a9762f32b9c40a71ae068c2193d32c824ecc2cf"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
