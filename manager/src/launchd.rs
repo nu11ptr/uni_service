@@ -87,7 +87,7 @@ impl LaunchDServiceManager {
         Ok(self.path()?.join(filename))
     }
 
-    fn domain(&self) -> OsString {
+    fn domain_target(&self) -> OsString {
         if self.user {
             let uid = unsafe { libc::getuid() }.to_string();
 
@@ -100,9 +100,9 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn make_name(&self, fully_qualified: bool) -> OsString {
+    fn make_service_target(&self, fully_qualified: bool) -> OsString {
         let mut s = if fully_qualified {
-            let domain = self.domain();
+            let domain = self.domain_target();
             let mut s = OsString::with_capacity(domain.len() + self.prefix.len() + self.name.len());
             s.push(domain);
             s.push("/");
@@ -153,7 +153,7 @@ impl ServiceManager for LaunchDServiceManager {
     </dict>
 </plist>
 "#,
-            self.make_name(false).to_string_lossy(),
+            self.make_service_target(false).to_string_lossy(),
         );
 
         // Create directories and install
@@ -163,14 +163,20 @@ impl ServiceManager for LaunchDServiceManager {
         write_file(&file, &service, SERVICE_PERMS)?;
 
         //Self::launch_ctl("enable", vec![self.make_name(true).as_ref()])?;
-        Self::launch_ctl("bootstrap", vec![self.domain().as_ref(), file.as_ref()])?;
+        Self::launch_ctl(
+            "bootstrap",
+            vec![self.domain_target().as_ref(), file.as_ref()],
+        )?;
         Ok(())
     }
 
     fn uninstall(&self) -> Result<()> {
         // First calculate file path and unload
         let file = self.make_file_name()?;
-        Self::launch_ctl("bootout", vec![self.domain().as_ref(), file.as_ref()])?;
+        Self::launch_ctl(
+            "bootout",
+            vec![self.domain_target().as_ref(), file.as_ref()],
+        )?;
         //Self::launch_ctl("disable", vec![self.make_name(true).as_ref()])?;
 
         // ...then wipe service file
@@ -181,7 +187,7 @@ impl ServiceManager for LaunchDServiceManager {
     fn start(&self) -> Result<()> {
         Self::launch_ctl(
             "kickstart",
-            vec![OsStr::new("-kp"), self.make_name(true).as_ref()],
+            vec![OsStr::new("-kp"), self.make_service_target(true).as_ref()],
         )?;
         Ok(())
     }
@@ -189,13 +195,16 @@ impl ServiceManager for LaunchDServiceManager {
     fn stop(&self) -> Result<()> {
         Self::launch_ctl(
             "kill",
-            vec![OsStr::new("SIGTERM"), self.make_name(true).as_ref()],
+            vec![
+                OsStr::new("SIGTERM"),
+                self.make_service_target(true).as_ref(),
+            ],
         )?;
         Ok(())
     }
 
     fn status(&self) -> Result<ServiceStatus> {
-        Self::launch_ctl("print", vec![self.make_name(true).as_ref()]).map(|status| {
+        Self::launch_ctl("print", vec![self.make_service_target(true).as_ref()]).map(|status| {
             if status.contains("state = running") {
                 ServiceStatus::Running
             } else {
