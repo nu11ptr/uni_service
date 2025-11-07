@@ -8,6 +8,10 @@ uni_service.workspace = true
 
 
 [dev-dependencies]
+libc.workspace = true
+polling.workspace = true
+send_ctrlc.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uni_service_manager.workspace = true
+windows-sys.workspace = true
