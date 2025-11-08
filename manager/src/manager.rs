@@ -75,7 +75,12 @@ pub enum ServiceErrKind {
     WrongState(ServiceStatus),
     Timeout(ServiceStatus),
     TimeoutError(Box<ServiceErrKind>),
-    UnknownError,
+    BadUtf8,
+    BadExitStatus(Option<i32>, String),
+    HomeDirectoryNotFound,
+    IoError,
+
+    Unknown,
 }
 
 impl UniKind for ServiceErrKind {
@@ -99,7 +104,17 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::TimeoutError(kind) => {
                 format!("Timeout waiting for service status. Last error: {:?}", kind).into()
             }
-            ServiceErrKind::UnknownError => "Unknown error".into(),
+            ServiceErrKind::Unknown => "Unknown error".into(),
+            ServiceErrKind::BadUtf8 => "Bad UTF-8 encoding".into(),
+            ServiceErrKind::BadExitStatus(code, msg) => format!(
+                "Bad child process exit status. Code: {:?}. Stderr: {}",
+                code, msg
+            )
+            .into(),
+            ServiceErrKind::HomeDirectoryNotFound => {
+                "Unable to locate the user's home directory".into()
+            }
+            ServiceErrKind::IoError => "An I/O error occurred".into(),
         })
     }
 }

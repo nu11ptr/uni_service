@@ -3,9 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use uni_error::{SimpleError, SimpleResult};
+use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
 
-use crate::manager::{Result, ServiceManager, ServiceStatus};
+use crate::ServiceErrKind;
+use crate::manager::{ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
@@ -15,7 +16,7 @@ pub(crate) fn make_service_manager(
     name: OsString,
     prefix: OsString,
     user: bool,
-) -> SimpleResult<Box<dyn ServiceManager>> {
+) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
     LaunchDServiceManager::new(name, prefix, user)
         .map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
@@ -27,18 +28,19 @@ struct LaunchDServiceManager {
 }
 
 impl LaunchDServiceManager {
-    fn new(name: OsString, prefix: OsString, user: bool) -> SimpleResult<Self> {
+    fn new(name: OsString, prefix: OsString, user: bool) -> UniResult<Self, ServiceErrKind> {
         // launchd? (must be a valid subcommand else returns exit code 1)
         if Self::launch_ctl("list", vec![]).is_ok() {
             Ok(Self { name, prefix, user })
         } else {
-            Err(SimpleError::from_context(
+            Err(UniError::from_kind_context(
+                ServiceErrKind::ServiceManagementNotAvailable,
                 "launchd is not available on this system",
             ))
         }
     }
 
-    pub fn launch_ctl(sub_cmd: &str, args: Vec<&OsStr>) -> Result<String> {
+    pub fn launch_ctl(sub_cmd: &str, args: Vec<&OsStr>) -> UniResult<String, ServiceErrKind> {
         let mut command = Command::new(LAUNCH_CTL);
 
         command
@@ -55,22 +57,20 @@ impl LaunchDServiceManager {
         }
 
         tracing::debug!("Executing command: {:?}", command);
-        let output = command.output()?;
+        let output = command.output().kind(ServiceErrKind::Unknown)?;
 
         if output.status.success() {
-            Ok(String::from_utf8(output.stdout)?)
+            Ok(String::from_utf8(output.stdout).kind(ServiceErrKind::BadUtf8)?)
         } else {
-            let msg = String::from_utf8(output.stderr)?;
-            Err(SimpleError::from_context(msg.trim().to_string()).into())
+            let msg = String::from_utf8(output.stderr).kind(ServiceErrKind::BadUtf8)?;
+            Err(ServiceErrKind::BadExitStatus(output.status.code(), msg).into_error())
         }
     }
 
-    fn path(&self) -> Result<PathBuf> {
+    fn path(&self) -> UniResult<PathBuf, ServiceErrKind> {
         if self.user {
             Ok(dirs::home_dir()
-                .ok_or_else(|| {
-                    SimpleError::from_context("Unable to locate the user's home directory")
-                })?
+                .ok_or_else(|| ServiceErrKind::HomeDirectoryNotFound.into_error())?
                 .join("Library")
                 .join("LaunchAgents"))
         } else {
@@ -78,7 +78,7 @@ impl LaunchDServiceManager {
         }
     }
 
-    fn make_file_name(&self) -> Result<PathBuf> {
+    fn make_file_name(&self) -> UniResult<PathBuf, ServiceErrKind> {
         let mut filename = OsString::new();
         filename.push(&self.prefix);
         filename.push(&self.name);
@@ -124,7 +124,7 @@ impl ServiceManager for LaunchDServiceManager {
         args: Vec<OsString>,
         _display_name: OsString,
         _desc: OsString,
-    ) -> Result<()> {
+    ) -> UniResult<(), ServiceErrKind> {
         // Combine program and args into a single vector
         let mut new_args: Vec<OsString> = Vec::with_capacity(args.len() + 1);
         new_args.push(program.into());
@@ -133,9 +133,9 @@ impl ServiceManager for LaunchDServiceManager {
         // Convert each argument to a string and format it for the service file
         let mut args = Vec::with_capacity(new_args.len());
         for arg in new_args {
-            let arg = arg.into_string().map_err(|_| {
-                SimpleError::from_context("Failed to convert service target to string")
-            })?;
+            let arg = arg
+                .into_string()
+                .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
             let arg = format!(r#"                <string>{arg}</string>"#);
             args.push(arg);
         }
@@ -145,7 +145,7 @@ impl ServiceManager for LaunchDServiceManager {
         let label = self
             .make_service_target(false)
             .into_string()
-            .map_err(|_| SimpleError::from_context("Failed to convert service target to string"))?;
+            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
 
         let service = format!(
             r#"r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -182,7 +182,7 @@ impl ServiceManager for LaunchDServiceManager {
 
         // Create directories and install
         let path = self.path()?;
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).kind(ServiceErrKind::IoError)?;
         let file = self.make_file_name()?;
         write_file(&file, &service, SERVICE_PERMS)?;
 
@@ -194,7 +194,7 @@ impl ServiceManager for LaunchDServiceManager {
         Ok(())
     }
 
-    fn uninstall(&self) -> Result<()> {
+    fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
         // First calculate file path and unload
         let file = self.make_file_name()?;
         Self::launch_ctl(
@@ -204,11 +204,11 @@ impl ServiceManager for LaunchDServiceManager {
         //Self::launch_ctl("disable", vec![self.make_name(true).as_ref()])?;
 
         // ...then wipe service file
-        fs::remove_file(file)?;
+        fs::remove_file(file).kind(ServiceErrKind::IoError)?;
         Ok(())
     }
 
-    fn start(&self) -> Result<()> {
+    fn start(&self) -> UniResult<(), ServiceErrKind> {
         Self::launch_ctl(
             "kickstart",
             vec![OsStr::new("-kp"), self.make_service_target(true).as_ref()],
@@ -216,7 +216,7 @@ impl ServiceManager for LaunchDServiceManager {
         Ok(())
     }
 
-    fn stop(&self) -> Result<()> {
+    fn stop(&self) -> UniResult<(), ServiceErrKind> {
         Self::launch_ctl(
             "kill",
             vec![
@@ -227,13 +227,23 @@ impl ServiceManager for LaunchDServiceManager {
         Ok(())
     }
 
-    fn status(&self) -> Result<ServiceStatus> {
-        Self::launch_ctl("print", vec![self.make_service_target(true).as_ref()]).map(|status| {
-            if status.contains("state = running") {
-                ServiceStatus::Running
-            } else {
-                ServiceStatus::Stopped
+    fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
+        match Self::launch_ctl("print", vec![self.make_service_target(true).as_ref()]) {
+            Ok(status) => {
+                if status.contains("state = running") {
+                    Ok(ServiceStatus::Running)
+                } else {
+                    Ok(ServiceStatus::Stopped)
+                }
             }
-        })
+            Err(e) => match e.kind_ref() {
+                // This seems to be the exit code for when the service is not installed
+                // I am not 100% sure it is ONLY used for this purpose
+                ServiceErrKind::BadExitStatus(code, _) if *code == Some(113) => {
+                    Ok(ServiceStatus::NotInstalled)
+                }
+                _ => Err(e),
+            },
+        }
     }
 }
