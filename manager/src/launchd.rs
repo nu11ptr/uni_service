@@ -92,7 +92,7 @@ impl LaunchDServiceManager {
             let uid = unsafe { libc::getuid() }.to_string();
 
             let mut s = OsString::new();
-            s.push("user/");
+            s.push("gui/");
             s.push(uid);
             s
         } else {
@@ -125,36 +125,60 @@ impl ServiceManager for LaunchDServiceManager {
         _display_name: OsString,
         _desc: OsString,
     ) -> Result<()> {
-        // Build service file
+        // Combine program and args into a single vector
         let mut new_args: Vec<OsString> = Vec::with_capacity(args.len() + 1);
         new_args.push(program.into());
         new_args.extend(args);
-        let args = new_args
-            .iter()
-            .map(|arg| format!(r#"<string>{}</string>"#, arg.to_string_lossy()))
-            .collect::<Vec<String>>()
-            .join("\n");
+
+        // Convert each argument to a string and format it for the service file
+        let mut args = Vec::with_capacity(new_args.len());
+        for arg in new_args {
+            let arg = arg.into_string().map_err(|_| {
+                SimpleError::from_context("Failed to convert service target to string")
+            })?;
+            let arg = format!(r#"                <string>{arg}</string>"#);
+            args.push(arg);
+        }
+        let args = args.join("\n");
+
+        // Make the service target label
+        let label = self
+            .make_service_target(false)
+            .into_string()
+            .map_err(|_| SimpleError::from_context("Failed to convert service target to string"))?;
 
         let service = format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>{}</string>
-        <key>ProgramArguments</key>
-        <array>
-            {args}
-        </array>
-        <key>KeepAlive</key>
-        <false/>
-        <key>RunAtLoad</key>
-        <false/>
-    </dict>
-</plist>
+            r#"r#"<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+                "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key><string>{label}</string>
+            <key>ProgramArguments</key>
+            <array>
+{args}
+            </array>
+            <key>RunAtLoad</key><false/>
+        </dict>
+        </plist>
 "#,
-            self.make_service_target(false).to_string_lossy(),
         );
+        // This seemed to work once - what is different? Hmm..
+        // let service = r#"<?xml version="1.0" encoding="UTF-8"?>
+        // <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        //         "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        // <plist version="1.0">
+        // <dict>
+        //     <key>Label</key><string>com.test.testbin</string>
+        //     <key>ProgramArguments</key>
+        //     <array>
+        //         <string>/Users/scott/src/rust/uni_service/target/debug/test_bin</string>
+        // <string>service</string>
+        //     </array>
+        //     <key>RunAtLoad</key><false/>
+        // </dict>
+        // </plist>
+        // "#;
 
         // Create directories and install
         let path = self.path()?;
