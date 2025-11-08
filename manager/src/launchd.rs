@@ -5,8 +5,8 @@ use std::process::{Command, Stdio};
 
 use uni_error::{SimpleError, SimpleResult};
 
+use crate::manager::{Result, ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
-use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
 const LAUNCH_CTL: &str = "launchctl";

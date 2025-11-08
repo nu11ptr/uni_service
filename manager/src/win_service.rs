@@ -11,7 +11,7 @@ use windows_service::service::{
 use windows_service::service_manager;
 use windows_service::service_manager::ServiceManagerAccess;
 
-use crate::{Result, ServiceManager, ServiceStatus};
+use crate::manager::{Result, ServiceManager, ServiceStatus};
 
 const MAX_WAIT: u32 = 50; // 5 seconds
 

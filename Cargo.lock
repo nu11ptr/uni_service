@@ -349,9 +349,9 @@ dependencies = [
 
 [[package]]
 name = "uni_error"
-version = "0.1.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2c5293734a6b0055a446dac5d43dc15c38fc9c81a695d0c306034b7bb288c9"
+checksum = "49392ef41672031a840fed9c4c5f4a9b07cc6e5f87a076c4266736deb749a126"
 
 [[package]]
 name = "uni_service"

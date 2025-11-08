@@ -5,8 +5,8 @@ use std::process::{Command, ExitStatus, Stdio};
 
 use uni_error::{SimpleError, SimpleResult};
 
+use crate::manager::{Result, ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
-use crate::{Result, ServiceManager, ServiceStatus};
 
 const GLOBAL_PATH: &str = "/etc/systemd/system";
 const SYSTEM_CTL: &str = "systemctl";

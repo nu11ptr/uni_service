@@ -3,11 +3,11 @@ mod common;
 use std::{process::Command, sync::OnceLock, thread, time::Duration};
 
 use send_ctrlc::{Interruptible as _, InterruptibleCommand as _};
-use uni_service_manager::{ServiceStatus, new_service_manager};
+use uni_service_manager::{ServiceStatus, UniServiceManager};
 
 use crate::common::TcpServer;
 
-const SERVER_TIMEOUT: Duration = Duration::from_secs(3);
+const TIMEOUT: Duration = Duration::from_secs(3);
 
 static TRACING: OnceLock<()> = OnceLock::new();
 
@@ -33,15 +33,15 @@ fn test_service_interactive() {
         .unwrap();
 
     let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
-    server.wait_for_connection(SERVER_TIMEOUT).unwrap();
-    server.expect_message("regular", SERVER_TIMEOUT).unwrap();
-    server.expect_message("starting", SERVER_TIMEOUT).unwrap();
-    server.expect_message("running", SERVER_TIMEOUT).unwrap();
+    server.wait_for_connection(TIMEOUT).unwrap();
+    server.expect_message("regular", TIMEOUT).unwrap();
+    server.expect_message("starting", TIMEOUT).unwrap();
+    server.expect_message("running", TIMEOUT).unwrap();
 
     command.interrupt().unwrap();
-    server.expect_message("stopping", SERVER_TIMEOUT).unwrap();
-    server.expect_message("quitting", SERVER_TIMEOUT).unwrap();
-    server.expect_message("goodbye", SERVER_TIMEOUT).unwrap();
+    server.expect_message("stopping", TIMEOUT).unwrap();
+    server.expect_message("quitting", TIMEOUT).unwrap();
+    server.expect_message("goodbye", TIMEOUT).unwrap();
     command.wait().unwrap();
 }
 
@@ -53,8 +53,8 @@ fn test_service() {
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 
-    let manager = new_service_manager("test_bin", "org.test.", true).unwrap();
-    assert!(manager.status().is_err());
+    let manager = UniServiceManager::new("test_bin", "org.test.", true).unwrap();
+    manager.wait_for_status_error(TIMEOUT).unwrap();
 
     manager
         .install(
@@ -64,30 +64,36 @@ fn test_service() {
             "Test service description".into(),
         )
         .unwrap();
-    assert_eq!(manager.status().unwrap(), ServiceStatus::Stopped);
+    manager
+        .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
+        .unwrap();
 
     let handle = thread::spawn(move || {
         let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
-        server.wait_for_connection(SERVER_TIMEOUT).unwrap();
+        server.wait_for_connection(TIMEOUT).unwrap();
         server
     });
     manager.start().unwrap();
 
     let mut server = handle.join().unwrap();
-    server.expect_message("service", SERVER_TIMEOUT).unwrap();
-    server.expect_message("starting", SERVER_TIMEOUT).unwrap();
-    server.expect_message("running", SERVER_TIMEOUT).unwrap();
-    assert_eq!(manager.status().unwrap(), ServiceStatus::Running);
+    server.expect_message("service", TIMEOUT).unwrap();
+    server.expect_message("starting", TIMEOUT).unwrap();
+    server.expect_message("running", TIMEOUT).unwrap();
+    manager
+        .wait_for_status(ServiceStatus::Running, TIMEOUT)
+        .unwrap();
 
     let handle = thread::spawn(move || {
-        server.expect_message("stopping", SERVER_TIMEOUT).unwrap();
-        server.expect_message("quitting", SERVER_TIMEOUT).unwrap();
+        server.expect_message("stopping", TIMEOUT).unwrap();
+        server.expect_message("quitting", TIMEOUT).unwrap();
     });
     manager.stop().unwrap();
-    assert_eq!(manager.status().unwrap(), ServiceStatus::Stopped);
+    manager
+        .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
+        .unwrap();
     handle.join().unwrap();
     // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
 
     manager.uninstall().unwrap();
-    assert!(manager.status().is_err());
+    manager.wait_for_status_error(TIMEOUT).unwrap();
 }
