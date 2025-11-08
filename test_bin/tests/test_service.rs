@@ -54,7 +54,9 @@ fn test_service() {
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 
     let manager = UniServiceManager::new("test_bin", "org.test.", true).unwrap();
-    manager.wait_for_status_error(TIMEOUT).unwrap();
+    manager
+        .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
+        .unwrap();
 
     manager
         .install(
@@ -95,5 +97,7 @@ fn test_service() {
     // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
 
     manager.uninstall().unwrap();
-    manager.wait_for_status_error(TIMEOUT).unwrap();
+    manager
+        .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
+        .unwrap();
 }

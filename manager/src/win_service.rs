@@ -1,21 +1,21 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use uni_error::SimpleResult;
+use uni_error::{ErrorContext as _, ResultContext as _, UniResult};
 use windows_service::service::{
     Service as WindowsService, ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType,
     ServiceState, ServiceType,
 };
-use windows_service::service_manager;
 use windows_service::service_manager::ServiceManagerAccess;
+use windows_service::{Error, service_manager};
 
-use crate::manager::{Result, ServiceManager, ServiceStatus};
+use crate::manager::{ServiceErrKind, ServiceManager, ServiceStatus};
 
 pub(crate) fn make_service_manager(
     name: OsString,
     _prefix: OsString,
     _user: bool,
-) -> SimpleResult<Box<dyn ServiceManager>> {
+) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
     Ok(Box::new(WinServiceManager { name }))
 }
 
@@ -26,13 +26,21 @@ struct WinServiceManager {
 }
 
 impl WinServiceManager {
-    fn open_service(&self, flags: ServiceAccess) -> Result<WindowsService> {
+    fn open_service(&self, flags: ServiceAccess) -> UniResult<WindowsService, ServiceErrKind> {
         tracing::debug!("Opening service: {:?}", self.name);
         let manager_access = ServiceManagerAccess::CONNECT;
         let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
-        let service = service_manager.open_service(&self.name, flags)?;
-        Ok(service)
+            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)
+                .kind(ServiceErrKind::UnknownError)?;
+        match service_manager.open_service(&self.name, flags) {
+            Ok(service) => Ok(service),
+            Err(Error::Winapi(err)) if err.raw_os_error() == Some(1060) => {
+                // Put the error back the way it was
+                let err = Error::Winapi(err);
+                Err(err.kind(ServiceErrKind::NotInstalled))
+            }
+            Err(e) => Err(e.kind(ServiceErrKind::UnknownError)),
+        }
     }
 }
 
@@ -43,10 +51,11 @@ impl ServiceManager for WinServiceManager {
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
-    ) -> Result<()> {
+    ) -> UniResult<(), ServiceErrKind> {
         let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
         let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)?;
+            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)
+                .kind(ServiceErrKind::UnknownError)?;
 
         let service_info = ServiceInfo {
             name: self.name.clone(),
@@ -61,37 +70,48 @@ impl ServiceManager for WinServiceManager {
             account_password: None,
         };
         tracing::debug!("Creating service: {:?}", service_info);
-        let service =
-            service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
-        service.set_description(&desc)?;
+        let service = service_manager
+            .create_service(&service_info, ServiceAccess::CHANGE_CONFIG)
+            .kind(ServiceErrKind::UnknownError)?;
+        service
+            .set_description(&desc)
+            .kind(ServiceErrKind::UnknownError)?;
 
         Ok(())
     }
 
-    fn uninstall(&self) -> Result<()> {
+    fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
         let service = self.open_service(ServiceAccess::DELETE)?;
         tracing::debug!("Deleting service");
-        service.delete()?;
+        service.delete().kind(ServiceErrKind::UnknownError)?;
         Ok(())
     }
 
-    fn start(&self) -> Result<()> {
+    fn start(&self) -> UniResult<(), ServiceErrKind> {
         let service = self.open_service(ServiceAccess::START)?;
         tracing::debug!("Starting service");
-        service.start(&[OsStr::new("Starting...")])?;
+        service
+            .start(&[OsStr::new("Starting...")])
+            .kind(ServiceErrKind::UnknownError)?;
         Ok(())
     }
 
-    fn stop(&self) -> Result<()> {
+    fn stop(&self) -> UniResult<(), ServiceErrKind> {
         let service = self.open_service(ServiceAccess::STOP)?;
         tracing::debug!("Stopping service");
-        service.stop()?;
+        service.stop().kind(ServiceErrKind::UnknownError)?;
         Ok(())
     }
 
-    fn status(&self) -> Result<ServiceStatus> {
-        let service = self.open_service(ServiceAccess::QUERY_STATUS)?;
-        let service_status = service.query_status()?;
+    fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
+        let service = match self.open_service(ServiceAccess::QUERY_STATUS) {
+            Ok(service) => service,
+            Err(e) if matches!(e.kind_ref(), ServiceErrKind::NotInstalled) => {
+                return Ok(ServiceStatus::NotInstalled);
+            }
+            Err(e) => return Err(e),
+        };
+        let service_status = service.query_status().kind(ServiceErrKind::UnknownError)?;
 
         match service_status.current_state {
             ServiceState::Running => Ok(ServiceStatus::Running),

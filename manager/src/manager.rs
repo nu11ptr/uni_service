@@ -6,15 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(all(
-    not(target_os = "windows"),
-    not(target_os = "linux"),
-    not(target_os = "macos")
-))]
-use uni_error::SimpleResult;
-use uni_error::{ResultContext as _, UniError, UniKind, UniResult};
-
-pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+use uni_error::{ErrorContext as _, UniKind, UniResult};
 
 // *** make_service_manager ***
 
@@ -34,10 +26,8 @@ fn make_service_manager(
     _name: OsString,
     _prefix: OsString,
     _user: bool,
-) -> SimpleResult<Box<dyn ServiceManager>> {
-    Err(SimpleError::from_context(
-        "Service management is not available on this platform",
-    ))
+) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
+    Err(ServiceErrKind::ServiceManagementNotAvailable.into_error())
 }
 
 // *** Status ***
@@ -60,28 +50,21 @@ pub enum ServiceStatus {
 
 /// The service manager is a trait for lifecycle management of a given service
 pub(crate) trait ServiceManager {
-    /// Installs the service. The `program` is the path to the executable to run when the service starts.
-    /// The `args` are the arguments to pass to the executable. The `display_name` is the name to display
-    /// to the user. The `desc` is the description of the service.
     fn install(
         &self,
         program: PathBuf,
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
-    ) -> Result<()>;
+    ) -> UniResult<(), ServiceErrKind>;
 
-    /// Uninstalls the service.
-    fn uninstall(&self) -> Result<()>;
+    fn uninstall(&self) -> UniResult<(), ServiceErrKind>;
 
-    /// Starts the service.
-    fn start(&self) -> Result<()>;
+    fn start(&self) -> UniResult<(), ServiceErrKind>;
 
-    /// Stops the service.
-    fn stop(&self) -> Result<()>;
+    fn stop(&self) -> UniResult<(), ServiceErrKind>;
 
-    /// Gets the status of the service.
-    fn status(&self) -> Result<ServiceStatus>;
+    fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind>;
 }
 
 #[derive(Clone, Debug)]
@@ -137,9 +120,7 @@ impl UniServiceManager {
         prefix: impl Into<OsString>,
         user: bool,
     ) -> UniResult<Self, ServiceErrKind> {
-        let manager = make_service_manager(name.into(), prefix.into(), user)
-            .kind(ServiceErrKind::UnknownError)?;
-        Ok(Self { manager })
+        make_service_manager(name.into(), prefix.into(), user).map(|manager| Self { manager })
     }
 
     /// Installs the service. The `program` is the path to the executable to run when the service starts.
@@ -155,11 +136,11 @@ impl UniServiceManager {
         desc: OsString,
     ) -> UniResult<(), ServiceErrKind> {
         match self.status() {
+            Ok(ServiceStatus::NotInstalled) => {
+                self.manager.install(program, args, display_name, desc)
+            }
             Ok(_) => Err(ServiceErrKind::AlreadyInstalled.into_error()),
-            Err(_) => self
-                .manager
-                .install(program, args, display_name, desc)
-                .map_err(|e| UniError::from_kind_boxed(ServiceErrKind::UnknownError, e)),
+            Err(e) => Err(e),
         }
     }
 
@@ -168,12 +149,9 @@ impl UniServiceManager {
     /// is not stopped, or if the uninstallation fails.
     pub fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
         match self.status() {
-            Ok(ServiceStatus::Stopped) => self
-                .manager
-                .uninstall()
-                .map_err(|e| UniError::from_kind_boxed(ServiceErrKind::UnknownError, e)),
+            Ok(ServiceStatus::Stopped) => self.manager.uninstall(),
             Ok(status) => Err(ServiceErrKind::WrongState(status).into_error()),
-            Err(_) => Err(ServiceErrKind::NotInstalled.into_error()),
+            Err(e) => Err(e),
         }
     }
 
@@ -182,12 +160,9 @@ impl UniServiceManager {
     /// fails.
     pub fn start(&self) -> UniResult<(), ServiceErrKind> {
         match self.status() {
-            Ok(ServiceStatus::Stopped) => self
-                .manager
-                .start()
-                .map_err(|e| UniError::from_kind_boxed(ServiceErrKind::UnknownError, e)),
+            Ok(ServiceStatus::Stopped) => self.manager.start(),
             Ok(status) => Err(ServiceErrKind::WrongState(status).into_error()),
-            Err(_) => Err(ServiceErrKind::NotInstalled.into_error()),
+            Err(e) => Err(e),
         }
     }
 
@@ -196,21 +171,16 @@ impl UniServiceManager {
     /// fails.
     pub fn stop(&self) -> UniResult<(), ServiceErrKind> {
         match self.status() {
-            Ok(ServiceStatus::Running) => self
-                .manager
-                .stop()
-                .map_err(|e| UniError::from_kind_boxed(ServiceErrKind::UnknownError, e)),
+            Ok(ServiceStatus::Running) => self.manager.stop(),
             Ok(status) => Err(ServiceErrKind::WrongState(status).into_error()),
-            Err(_) => Err(ServiceErrKind::NotInstalled.into_error()),
+            Err(e) => Err(e),
         }
     }
 
     /// Gets the current status of the service. It returns an error if the service is not installed
     /// or if the status cannot be determined.
     pub fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
-        self.manager
-            .status()
-            .map_err(|e| UniError::from_kind_boxed(ServiceErrKind::UnknownError, e))
+        self.manager.status()
     }
 
     /// Waits for the service to reach the desired status. It returns an error if the service is not installed
@@ -237,37 +207,14 @@ impl UniServiceManager {
             if start_time.elapsed() > timeout {
                 match (last_status, last_error) {
                     (None, Some(err)) => {
-                        return Err(
-                            ServiceErrKind::TimeoutError(Box::new(err.kind_clone())).into_error()
-                        );
+                        let kind = err.kind_clone();
+                        return Err(err.kind(ServiceErrKind::TimeoutError(Box::new(kind))));
                     }
                     (Some(s), None) => {
                         return Err(ServiceErrKind::Timeout(s).into_error());
                     }
                     _ => unreachable!(),
                 }
-            } else {
-                thread::sleep(Duration::from_millis(50));
-            }
-        }
-    }
-
-    /// Temporary method until UniError<ServiceErrorKind> is used by boxed service manager.
-    /// Afte that, they can return ServiceErrKind::NotInstalled instead of an error.
-    pub fn wait_for_status_error(
-        &self,
-        timeout: Duration,
-    ) -> UniResult<UniError<ServiceErrKind>, ServiceErrKind> {
-        let start_time = Instant::now();
-
-        loop {
-            let last_status = match self.status() {
-                Ok(s) => s,
-                Err(e) => return Ok(e),
-            };
-
-            if start_time.elapsed() > timeout {
-                return Err(ServiceErrKind::Timeout(last_status).into_error());
             } else {
                 thread::sleep(Duration::from_millis(50));
             }
