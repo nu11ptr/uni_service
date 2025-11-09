@@ -57,7 +57,7 @@ impl LaunchDServiceManager {
         }
 
         tracing::debug!("Executing command: {:?}", command);
-        let output = command.output().kind(ServiceErrKind::Unknown)?;
+        let output = command.output().kind(ServiceErrKind::IoError)?;
 
         if output.status.success() {
             Ok(String::from_utf8(output.stdout).kind(ServiceErrKind::BadUtf8)?)
@@ -70,7 +70,7 @@ impl LaunchDServiceManager {
     fn path(&self) -> UniResult<PathBuf, ServiceErrKind> {
         if self.user {
             Ok(dirs::home_dir()
-                .ok_or_else(|| ServiceErrKind::HomeDirectoryNotFound.into_error())?
+                .ok_or_else(|| ServiceErrKind::DirectoryNotFound.into_error())?
                 .join("Library")
                 .join("LaunchAgents"))
         } else {

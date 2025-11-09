@@ -77,7 +77,7 @@ pub enum ServiceErrKind {
     TimeoutError(Box<ServiceErrKind>),
     BadUtf8,
     BadExitStatus(Option<i32>, String),
-    HomeDirectoryNotFound,
+    DirectoryNotFound,
     IoError,
 
     Unknown,
@@ -111,9 +111,7 @@ impl UniKind for ServiceErrKind {
                 code, msg
             )
             .into(),
-            ServiceErrKind::HomeDirectoryNotFound => {
-                "Unable to locate the user's home directory".into()
-            }
+            ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
             ServiceErrKind::IoError => "An I/O error occurred".into(),
         })
     }
