@@ -64,10 +64,6 @@ jobs:
         - name: Run tests
           run: cargo test
 
-        - name: Run tests (root)
-          if: matrix.build != 'windows'
-          run: sudo -E cargo test
-
         - name: Run tests with coverage
           run: cargo llvm-cov nextest --output-path codecov.json --codecov
 
@@ -76,3 +72,13 @@ jobs:
           with:
               files: codecov.json
               token: ${{ secrets.CODECOV_TOKEN }}
+
+        - name: Run tests (root)
+          if: matrix.build != 'windows'
+          run: |
+            mkdir .cargo
+            echo '[target.x86_64-unknown-linux-gnu]' > .cargo/config.toml
+            echo "runner = 'sudo -E'" >> .cargo/config.toml
+            echo '[target.aarch64-apple-darwin]' >> .cargo/config.toml
+            echo "runner = 'sudo -E'" >> .cargo/config.toml
+            cargo test
