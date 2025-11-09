@@ -21,6 +21,16 @@ fn init_tracing() {
     });
 }
 
+#[cfg(windows)]
+fn is_root() -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+fn is_root() -> bool {
+    unsafe { libc::getuid() == 0 }
+}
+
 #[test]
 fn test_service_interactive() {
     const SERVER_ADDRESS: &str = "127.0.0.1:53164";
@@ -47,13 +57,14 @@ fn test_service_interactive() {
 
 #[test]
 fn test_service() {
+    let user = !is_root();
     const SERVER_ADDRESS: &str = "127.0.0.1:53165";
     init_tracing();
 
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 
-    let manager = UniServiceManager::new("test_bin", "org.test.", true).unwrap();
+    let manager = UniServiceManager::new("test_bin", "org.test.", user).unwrap();
     manager
         .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
         .unwrap();

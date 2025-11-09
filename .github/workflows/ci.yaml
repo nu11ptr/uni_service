@@ -64,6 +64,10 @@ jobs:
         - name: Run tests
           run: cargo test
 
+        - name: Run tests (root)
+          if: matrix.build != 'windows'
+          run: sudo cargo test
+
         - name: Run tests with coverage
           run: cargo llvm-cov nextest --output-path codecov.json --codecov
 
