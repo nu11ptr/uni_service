@@ -166,22 +166,6 @@ impl ServiceManager for LaunchDServiceManager {
 </plist>
 "#,
         );
-        // This seemed to work once - what is different? Hmm..
-        // let service = r#"<?xml version="1.0" encoding="UTF-8"?>
-        // <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-        //         "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        // <plist version="1.0">
-        // <dict>
-        //     <key>Label</key><string>com.test.testbin</string>
-        //     <key>ProgramArguments</key>
-        //     <array>
-        //         <string>/Users/scott/src/rust/uni_service/target/debug/test_bin</string>
-        // <string>service</string>
-        //     </array>
-        //     <key>RunAtLoad</key><false/>
-        // </dict>
-        // </plist>
-        // "#;
 
         // Create directories and install
         let path = self.path()?;
@@ -189,7 +173,6 @@ impl ServiceManager for LaunchDServiceManager {
         let file = self.make_file_name()?;
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        //Self::launch_ctl("enable", vec![self.make_name(true).as_ref()])?;
         Self::launch_ctl(
             "bootstrap",
             vec![self.domain_target().as_ref(), file.as_ref()],
@@ -201,7 +184,6 @@ impl ServiceManager for LaunchDServiceManager {
         // First calculate file path and unload
         let file = self.make_file_name()?;
         Self::launch_ctl("bootout", vec![self.make_service_target(true).as_ref()])?;
-        //Self::launch_ctl("disable", vec![self.make_name(true).as_ref()])?;
 
         // ...then wipe service file
         fs::remove_file(file).kind(ServiceErrKind::IoError)?;
