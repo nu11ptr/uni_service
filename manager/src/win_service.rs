@@ -14,15 +14,16 @@ use crate::manager::{ServiceErrKind, ServiceManager, ServiceStatus};
 pub(crate) fn make_service_manager(
     name: OsString,
     _prefix: OsString,
-    _user: bool,
+    user: bool,
 ) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
-    Ok(Box::new(WinServiceManager { name }))
+    Ok(Box::new(WinServiceManager { name, user }))
 }
 
 // *** WinServiceManager ***
 
 struct WinServiceManager {
     name: OsString,
+    user: bool,
 }
 
 impl WinServiceManager {
@@ -57,10 +58,16 @@ impl ServiceManager for WinServiceManager {
             service_manager::ServiceManager::local_computer(None::<&str>, manager_access)
                 .kind(ServiceErrKind::Unknown)?;
 
+        let service_type = if self.user {
+            ServiceType::USER_OWN_PROCESS
+        } else {
+            ServiceType::OWN_PROCESS
+        };
+
         let service_info = ServiceInfo {
             name: self.name.clone(),
             display_name,
-            service_type: ServiceType::OWN_PROCESS,
+            service_type,
             start_type: ServiceStartType::OnDemand,
             error_control: ServiceErrorControl::Normal,
             executable_path: program,

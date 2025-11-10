@@ -21,16 +21,6 @@ fn init_tracing() {
     });
 }
 
-#[cfg(windows)]
-fn is_root() -> bool {
-    true
-}
-
-#[cfg(not(windows))]
-fn is_root() -> bool {
-    unsafe { libc::getuid() == 0 }
-}
-
 #[test]
 fn test_service_interactive() {
     const SERVER_ADDRESS: &str = "127.0.0.1:53164";
@@ -55,24 +45,29 @@ fn test_service_interactive() {
     command.wait().unwrap();
 }
 
-#[test]
-fn test_service() {
-    let user = !is_root();
+fn test_service(name: &str, user: bool, test_execution: bool) {
+    // Hardcoded so only one test supported at a time!
     const SERVER_ADDRESS: &str = "127.0.0.1:53165";
     init_tracing();
 
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 
-    let manager = UniServiceManager::new("test_bin", "org.test.", user).unwrap();
+    let manager = UniServiceManager::new(name, "org.test.", user).unwrap();
     manager
         .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
         .unwrap();
 
+    let args = if test_execution {
+        vec!["service".into(), SERVER_ADDRESS.into()]
+    } else {
+        vec!["service".into()]
+    };
+
     manager
         .install(
             bin_path.into(),
-            vec!["service".into(), SERVER_ADDRESS.into()],
+            args,
             "Test service".into(),
             "Test service description".into(),
         )
@@ -81,34 +76,77 @@ fn test_service() {
         .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
         .unwrap();
 
-    let handle = thread::spawn(move || {
-        let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
-        server.wait_for_connection(TIMEOUT).unwrap();
-        server
-    });
-    manager.start().unwrap();
+    if test_execution {
+        let handle = thread::spawn(move || {
+            let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
+            server.wait_for_connection(TIMEOUT).unwrap();
+            server
+        });
+        manager.start().unwrap();
 
-    let mut server = handle.join().unwrap();
-    server.expect_message("service", TIMEOUT).unwrap();
-    server.expect_message("starting", TIMEOUT).unwrap();
-    server.expect_message("running", TIMEOUT).unwrap();
-    manager
-        .wait_for_status(ServiceStatus::Running, TIMEOUT)
-        .unwrap();
+        let mut server = handle.join().unwrap();
+        server.expect_message("service", TIMEOUT).unwrap();
+        server.expect_message("starting", TIMEOUT).unwrap();
+        server.expect_message("running", TIMEOUT).unwrap();
+        manager
+            .wait_for_status(ServiceStatus::Running, TIMEOUT)
+            .unwrap();
 
-    let handle = thread::spawn(move || {
-        server.expect_message("stopping", TIMEOUT).unwrap();
-        server.expect_message("quitting", TIMEOUT).unwrap();
-    });
-    manager.stop().unwrap();
-    manager
-        .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
-        .unwrap();
-    handle.join().unwrap();
-    // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
+        let handle = thread::spawn(move || {
+            server.expect_message("stopping", TIMEOUT).unwrap();
+            server.expect_message("quitting", TIMEOUT).unwrap();
+        });
+        manager.stop().unwrap();
+        manager
+            .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
+            .unwrap();
+        handle.join().unwrap();
+        // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
+    }
 
     manager.uninstall().unwrap();
     manager
         .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
         .unwrap();
+}
+
+// Requires administrator privileges to install/uninstall, and can only be started/stopped on logon/logoff
+#[cfg(windows)]
+#[test]
+fn test_windows_user_service() {
+    test_service("user_test", true, false);
+}
+
+// Regular user can install/uninstall
+#[cfg(windows)]
+#[test]
+fn test_windows_system_service() {
+    test_service("system_test", false, true);
+}
+
+#[cfg(not(windows))]
+fn is_root() -> bool {
+    unsafe { libc::getuid() == 0 }
+}
+
+// Regular user can install/uninstall
+#[cfg(not(windows))]
+#[test]
+fn test_unix_user_service() {
+    if !is_root() {
+        test_service("user_test", true, true);
+    } else {
+        eprintln!("Skipping 'test_unix_user_service' because not running as user")
+    }
+}
+
+// Requires root to install/uninstall
+#[cfg(not(windows))]
+#[test]
+fn test_unix_system_service() {
+    if is_root() {
+        test_service("system_test", false, true);
+    } else {
+        eprintln!("Skipping 'test_unix_system_service' because not running as root")
+    }
 }
