@@ -18,4 +18,3 @@ tracing-subscriber = { version = "0.3", features = [
 ], default-features = false }
 uni_error = "0.4"
 windows-service = "0.8"
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }

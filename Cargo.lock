@@ -285,7 +285,6 @@ dependencies = [
  "tracing-subscriber",
  "uni_service",
  "uni_service_manager",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -14,4 +14,3 @@ send_ctrlc.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uni_service_manager.workspace = true
-windows-sys.workspace = true
