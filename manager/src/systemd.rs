@@ -149,6 +149,9 @@ WantedBy={wanted_by}
             Err(e) if matches!(e.kind_ref(), ServiceErrKind::BadExitStatus(_, _)) => {
                 match e.kind_ref() {
                     ServiceErrKind::BadExitStatus(Some(3), _) => Ok(ServiceStatus::Stopped),
+                    // Yes, it is a bit weird to turn an error into a successful status, but
+                    // this allows us to generalize "wait_for_status" to be able to wait for
+                    // uninstallation in addition to other statuses.
                     ServiceErrKind::BadExitStatus(Some(4), _) => Ok(ServiceStatus::NotInstalled),
                     _ => Err(e),
                 }

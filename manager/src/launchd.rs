@@ -207,6 +207,9 @@ impl ServiceManager for LaunchDServiceManager {
                 // This seems to be the exit code for when the service is not installed
                 // I am not 100% sure it is ONLY used for this purpose
                 ServiceErrKind::BadExitStatus(code, _) if *code == Some(113) => {
+                    // Yes, it is a bit weird to turn an error into a successful status, but
+                    // this allows us to generalize "wait_for_status" to be able to wait for
+                    // uninstallation in addition to other statuses.
                     Ok(ServiceStatus::NotInstalled)
                 }
                 _ => Err(e),

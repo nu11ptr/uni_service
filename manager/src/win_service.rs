@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use uni_error::{ErrorContext as _, ResultContext as _, UniError, UniKind as _, UniResult};
 
@@ -22,16 +21,11 @@ pub(crate) fn make_service_manager(
 struct WinServiceManager {
     name: OsString,
     luid: Option<OsString>,
-    just_installed: AtomicBool,
 }
 
 impl WinServiceManager {
     fn new(name: OsString, user: bool) -> UniResult<Self, ServiceErrKind> {
-        let mut mgr = Self {
-            name,
-            luid: None,
-            just_installed: AtomicBool::new(false),
-        };
+        let mut mgr = Self { name, luid: None };
 
         // If this is a user service, we need to get the LUID of the current user
         let args = if user {
@@ -112,71 +106,9 @@ impl WinServiceManager {
             Cow::Borrowed(&self.name)
         }
     }
-}
 
-impl ServiceManager for WinServiceManager {
-    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
-        let type_ = if self.luid.is_none() {
-            "own"
-        } else {
-            "userown"
-        };
-
-        let program = spec.path_and_args().join(OsStr::new(" "));
-
-        let start = if spec.autostart { "auto" } else { "demand" };
-
-        let mut create_args: Vec<&OsStr> = vec![
-            "type=".as_ref(),
-            type_.as_ref(),
-            "binPath=".as_ref(),
-            &program,
-            "start=".as_ref(),
-            start.as_ref(),
-        ];
-
-        if let Some(display_name) = &spec.display_name {
-            create_args.push("DisplayName=".as_ref());
-            create_args.push(display_name);
-        }
-
-        self.sc("create", Some(&self.name), create_args)?;
-        if let Some(desc) = &spec.desc {
-            self.sc("description", Some(&self.name), vec![desc])?;
-        }
-
-        self.just_installed.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
-        tracing::debug!("Deleting service");
-        self.sc("delete", Some(&self.name), vec![])?;
-        Ok(())
-    }
-
-    fn start(&self) -> UniResult<(), ServiceErrKind> {
-        tracing::debug!("Starting service");
-        self.sc("start", Some(self.instance_name().as_ref()), vec![])?;
-        Ok(())
-    }
-
-    fn stop(&self) -> UniResult<(), ServiceErrKind> {
-        tracing::debug!("Stopping service");
-        self.sc("stop", Some(self.instance_name().as_ref()), vec![])?;
-        Ok(())
-    }
-
-    fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
-        // User services require a logoff/logon before instances are even created, so
-        // use the template status until that happens
-        let name = if self.just_installed.load(Ordering::Relaxed) {
-            Cow::Borrowed(self.name.as_os_str())
-        } else {
-            self.instance_name()
-        };
-
-        match self.sc("query", Some(&name), vec![]) {
+    fn raw_status(&self, name: &OsStr) -> UniResult<ServiceStatus, ServiceErrKind> {
+        match self.sc("query", Some(name), vec![]) {
             Ok(output) => {
                 for line in output.lines() {
                     let mut tokens = line.split_whitespace();
@@ -210,12 +142,90 @@ impl ServiceManager for WinServiceManager {
                 ServiceErrKind::BadExitStatus(Some(5), _) => {
                     Err(e.kind(ServiceErrKind::AccessDenied))
                 }
+                // Yes, it is a bit weird to turn an error into a successful status, but
+                // this allows us to generalize "wait_for_status" to be able to wait for
+                // uninstallation in addition to other statuses.
                 ServiceErrKind::BadExitStatus(Some(1060), _) => Ok(ServiceStatus::NotInstalled),
                 ServiceErrKind::BadExitStatus(Some(1073), _) => {
                     Err(e.kind(ServiceErrKind::AlreadyInstalled))
                 }
                 _ => Err(e),
             },
+        }
+    }
+}
+
+impl ServiceManager for WinServiceManager {
+    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
+        let type_ = if self.luid.is_none() {
+            "own"
+        } else {
+            "userown"
+        };
+
+        let program = spec.path_and_args().join(OsStr::new(" "));
+
+        let start = if spec.autostart { "auto" } else { "demand" };
+
+        let mut create_args: Vec<&OsStr> = vec![
+            "type=".as_ref(),
+            type_.as_ref(),
+            "binPath=".as_ref(),
+            &program,
+            "start=".as_ref(),
+            start.as_ref(),
+        ];
+
+        if let Some(display_name) = &spec.display_name {
+            create_args.push("DisplayName=".as_ref());
+            create_args.push(display_name);
+        }
+
+        self.sc("create", Some(&self.name), create_args)?;
+        if let Some(desc) = &spec.desc {
+            self.sc("description", Some(&self.name), vec![desc])?;
+        }
+
+        Ok(())
+    }
+
+    fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
+        // If we got this far, the status was already checked, but we don't know whether it
+        // was the template or the instance that was queried, so we need to check again,
+        // and be explicit, as we want to delete the instance if it exists.
+        if self.luid.is_some()
+            && self.raw_status(&self.instance_name())? != ServiceStatus::NotInstalled
+        {
+            tracing::debug!("Deleting user service instance");
+            self.sc("delete", Some(&self.instance_name()), vec![])?;
+        }
+
+        tracing::debug!("Deleting service (or user template)");
+        self.sc("delete", Some(&self.name), vec![])?;
+        Ok(())
+    }
+
+    fn start(&self) -> UniResult<(), ServiceErrKind> {
+        tracing::debug!("Starting service");
+        self.sc("start", Some(self.instance_name().as_ref()), vec![])?;
+        Ok(())
+    }
+
+    fn stop(&self) -> UniResult<(), ServiceErrKind> {
+        tracing::debug!("Stopping service");
+        self.sc("stop", Some(self.instance_name().as_ref()), vec![])?;
+        Ok(())
+    }
+
+    fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
+        let status = self.raw_status(self.instance_name().as_ref())?;
+
+        // User services require a logoff/logon before instances are even created, so
+        // we start with the instance attempt above, but if not installed, fallback
+        // to the template status
+        match (&self.luid, status) {
+            (Some(_), ServiceStatus::NotInstalled) => self.raw_status(self.name.as_ref()),
+            (_, status) => Ok(status),
         }
     }
 }
