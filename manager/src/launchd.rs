@@ -136,7 +136,7 @@ impl ServiceManager for LaunchDServiceManager {
             let arg = arg
                 .into_string()
                 .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-            let arg = format!(r#"                <string>{arg}</string>"#);
+            let arg = format!(r#"            <string>{arg}</string>"#);
             args.push(arg);
         }
         let args = args.join("\n");
@@ -148,19 +148,22 @@ impl ServiceManager for LaunchDServiceManager {
             .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
 
         let service = format!(
-            r#"r#"<?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-                "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>Label</key><string>{label}</string>
-            <key>ProgramArguments</key>
-            <array>
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>{label}</string>
+        <key>ProgramArguments</key>
+        <array>
 {args}
-            </array>
-            <key>RunAtLoad</key><false/>
-        </dict>
-        </plist>
+        </array>
+        <key>KeepAlive</key>
+        <false/>
+        <key>RunAtLoad</key>
+        <false/>
+    </dict>
+</plist>
 "#,
         );
         // This seemed to work once - what is different? Hmm..
@@ -197,10 +200,7 @@ impl ServiceManager for LaunchDServiceManager {
     fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
         // First calculate file path and unload
         let file = self.make_file_name()?;
-        Self::launch_ctl(
-            "bootout",
-            vec![self.domain_target().as_ref(), file.as_ref()],
-        )?;
+        Self::launch_ctl("bootout", vec![self.make_service_target(true).as_ref()])?;
         //Self::launch_ctl("disable", vec![self.make_name(true).as_ref()])?;
 
         // ...then wipe service file
