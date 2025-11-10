@@ -3,7 +3,7 @@ mod common;
 use std::{process::Command, sync::OnceLock, thread, time::Duration};
 
 use send_ctrlc::{Interruptible as _, InterruptibleCommand as _};
-use uni_service_manager::{ServiceStatus, UniServiceManager};
+use uni_service_manager::{ServiceSpec, ServiceStatus, UniServiceManager};
 
 use crate::common::TcpServer;
 
@@ -58,21 +58,17 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
         .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
         .unwrap();
 
-    let args = if test_execution {
-        vec!["service".into(), SERVER_ADDRESS.into()]
+    let spec = ServiceSpec::new(bin_path)
+        .arg("service")
+        .display_name("Test service")
+        .desc("Test service description");
+    let spec = if test_execution {
+        spec.arg(SERVER_ADDRESS)
     } else {
-        vec!["service".into()]
+        spec
     };
 
-    manager
-        .install(
-            bin_path.into(),
-            args,
-            "Test service".into(),
-            "Test service description".into(),
-            false,
-        )
-        .unwrap();
+    manager.install(&spec).unwrap();
     manager
         .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
         .unwrap();

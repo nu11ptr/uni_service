@@ -7,6 +7,7 @@ mod manager;
 mod systemd;
 #[cfg(not(target_os = "windows"))]
 mod unix_util;
+mod util;
 #[cfg(windows)]
 mod win_service;
 

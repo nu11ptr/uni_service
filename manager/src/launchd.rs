@@ -5,9 +5,9 @@ use std::process::{Command, Stdio};
 
 use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
 
-use crate::ServiceErrKind;
 use crate::manager::{ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
+use crate::{ServiceErrKind, ServiceSpec, util};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
 const LAUNCH_CTL: &str = "launchctl";
@@ -118,37 +118,19 @@ impl LaunchDServiceManager {
 }
 
 impl ServiceManager for LaunchDServiceManager {
-    fn install(
-        &self,
-        program: PathBuf,
-        args: Vec<OsString>,
-        _display_name: OsString,
-        _desc: OsString,
-        autostart: bool,
-    ) -> UniResult<(), ServiceErrKind> {
-        // Combine program and args into a single vector
-        let mut new_args: Vec<OsString> = Vec::with_capacity(args.len() + 1);
-        new_args.push(program.into());
-        new_args.extend(args);
-
+    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         // Convert each argument to a string and format it for the service file
-        let mut args = Vec::with_capacity(new_args.len());
-        for arg in new_args {
-            let arg = arg
-                .into_string()
-                .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-            let arg = format!(r#"            <string>{arg}</string>"#);
-            args.push(arg);
-        }
-        let args = args.join("\n");
+        let args = spec
+            .path_and_args_string()?
+            .into_iter()
+            .map(|arg| format!(r#"            <string>{arg}</string>"#))
+            .collect::<Vec<_>>()
+            .join("\n");
 
         // Make the service target label
-        let label = self
-            .make_service_target(false)
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let label = util::os_string_to_string(self.make_service_target(false))?;
 
-        let run_at_load = if autostart { "true" } else { "false" };
+        let run_at_load = if spec.autostart { "true" } else { "false" };
 
         let service = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>

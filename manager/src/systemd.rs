@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
 
 use crate::ServiceErrKind;
-use crate::manager::{ServiceManager, ServiceStatus};
+use crate::manager::{ServiceManager, ServiceSpec, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
 
 const GLOBAL_PATH: &str = "/etc/systemd/system";
@@ -87,14 +87,7 @@ impl SystemDServiceManager {
 }
 
 impl ServiceManager for SystemDServiceManager {
-    fn install(
-        &self,
-        program: PathBuf,
-        args: Vec<OsString>,
-        _display_name: OsString,
-        desc: OsString,
-        autostart: bool,
-    ) -> UniResult<(), ServiceErrKind> {
+    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         // Build service file
         let wanted_by = if self.user {
             "default.target"
@@ -102,24 +95,17 @@ impl ServiceManager for SystemDServiceManager {
             "multi-user.target"
         };
 
-        let args = args.join(" ".as_ref());
-        let args = args
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-        let desc = desc
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-        let program = program
-            .into_os_string()
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let args = spec.path_and_args_string()?.join(" ");
+        let desc = match spec.desc_string()? {
+            Some(desc) => format!("Description={desc}\n"),
+            None => String::new(),
+        };
 
         let service = format!(
             r#"[Unit]
-Description={desc}
-
+{desc}
 [Service]
-ExecStart={program} {args}
+ExecStart={args}
 Restart=always
 
 [Install]
@@ -133,7 +119,7 @@ WantedBy={wanted_by}
         let file = self.make_file_name()?;
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        if autostart {
+        if spec.autostart {
             self.system_ctl(Some("enable"))?;
         }
         Ok(())

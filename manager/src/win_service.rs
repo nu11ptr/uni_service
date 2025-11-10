@@ -1,12 +1,11 @@
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use uni_error::{ErrorContext as _, ResultContext as _, UniError, UniKind as _, UniResult};
 
-use crate::manager::{ServiceErrKind, ServiceManager, ServiceStatus};
+use crate::manager::{ServiceErrKind, ServiceManager, ServiceSpec, ServiceStatus};
 
 const SC_EXE: &str = "sc.exe";
 
@@ -117,57 +116,36 @@ impl WinServiceManager {
 }
 
 impl ServiceManager for WinServiceManager {
-    fn install(
-        &self,
-        program: PathBuf,
-        args: Vec<OsString>,
-        display_name: OsString,
-        desc: OsString,
-        autostart: bool,
-    ) -> UniResult<(), ServiceErrKind> {
+    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         let type_ = if self.luid.is_none() {
             "own"
         } else {
             "userown"
         };
 
-        let display_name = display_name
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let program = spec.path_and_args().join(OsStr::new(" "));
 
-        let desc = desc
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let start = if spec.autostart { "auto" } else { "demand" };
 
-        let program_str = program
-            .into_os_string()
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-        let args = args
-            .join(" ".as_ref())
-            .into_string()
-            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
-        let program = format!("{program_str} {args}");
+        let mut create_args: Vec<&OsStr> = vec![
+            "type=".as_ref(),
+            type_.as_ref(),
+            "binPath=".as_ref(),
+            &program,
+            "start=".as_ref(),
+            start.as_ref(),
+        ];
 
-        let start = if autostart { "auto" } else { "demand" };
+        if let Some(display_name) = &spec.display_name {
+            create_args.push("DisplayName=".as_ref());
+            create_args.push(display_name);
+        }
 
-        self.sc(
-            "create",
-            Some(&self.name),
-            vec![
-                "type=".as_ref(),
-                type_.as_ref(),
-                "DisplayName=".as_ref(),
-                display_name.as_ref(),
-                "binPath=".as_ref(),
-                program.as_ref(),
-                "start=".as_ref(),
-                start.as_ref(),
-            ],
-        )?;
-        self.sc("description", Some(&self.name), vec![desc.as_ref()])?;
+        self.sc("create", Some(&self.name), create_args)?;
+        if let Some(desc) = &spec.desc {
+            self.sc("description", Some(&self.name), vec![desc])?;
+        }
 
-        self.just_installed.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -217,13 +195,13 @@ impl ServiceManager for WinServiceManager {
                                 "CONTINUE_PENDING" => Ok(ServiceStatus::ContinuePending),
                                 "PAUSE_PENDING" => Ok(ServiceStatus::PausePending),
                                 "PAUSED" => Ok(ServiceStatus::Paused),
-                                _ => Err(ServiceErrKind::Unknown.into_error()),
+                                _ => Err(ServiceErrKind::PlatformError(None).into_error()),
                             };
                         }
                     }
                 }
 
-                Err(ServiceErrKind::Unknown.into_error())
+                Err(ServiceErrKind::PlatformError(None).into_error())
             }
             Err(e) => match e.kind_ref() {
                 ServiceErrKind::BadExitStatus(Some(2), _) => {

@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     path::PathBuf,
     thread,
     time::{Duration, Instant},
@@ -14,6 +14,7 @@ use uni_error::{ErrorContext as _, UniKind, UniResult};
 use crate::launchd::make_service_manager;
 #[cfg(target_os = "linux")]
 use crate::systemd::make_service_manager;
+use crate::util;
 #[cfg(windows)]
 use crate::win_service::make_service_manager;
 
@@ -54,18 +55,102 @@ pub enum ServiceStatus {
     Paused,
 }
 
+// *** Service Spec ***
+
+/// A specification of a service to be installed.
+pub struct ServiceSpec {
+    /// The path to the executable to run when the service starts.
+    pub path: PathBuf,
+    /// The arguments to pass to the executable.
+    pub args: Vec<OsString>,
+    /// The display name of the service.
+    pub display_name: Option<OsString>,
+    /// The description of the service.
+    pub desc: Option<OsString>,
+    /// Whether the service should start automatically when the system boots or user logs in.
+    pub autostart: bool,
+}
+
+impl ServiceSpec {
+    /// Creates a new service specification with the given path to the executable.
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            args: vec![],
+            display_name: None,
+            desc: None,
+            autostart: false,
+        }
+    }
+
+    /// Adds an argument to the executable.
+    pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
+        self.args.push(arg.into());
+        self
+    }
+
+    /// Sets the display name of the service.
+    pub fn display_name(mut self, display_name: impl Into<OsString>) -> Self {
+        self.display_name = Some(display_name.into());
+        self
+    }
+
+    /// Sets the description of the service.
+    pub fn desc(mut self, desc: impl Into<OsString>) -> Self {
+        self.desc = Some(desc.into().into());
+        self
+    }
+
+    /// Sets whether the service should start automatically when the system boots or user logs in.
+    pub fn set_autostart(mut self) -> Self {
+        self.autostart = true;
+        self
+    }
+
+    /// Returns the path to the executable and the arguments as a vector of `OsStr`s.
+    pub fn path_and_args(&self) -> Vec<&OsStr> {
+        let mut result = vec![self.path.as_ref()];
+        let args = self
+            .args
+            .iter()
+            .map(|arg| <OsString as AsRef<OsStr>>::as_ref(arg));
+        result.extend(args);
+        result
+    }
+
+    /// Returns the path to the executable and the arguments as a vector of strings.
+    /// It returns an error if the path to the executable or the arguments are not valid UTF-8.
+    pub fn path_and_args_string(&self) -> UniResult<Vec<String>, ServiceErrKind> {
+        let combined = self.path_and_args();
+        combined
+            .iter()
+            .map(|arg| util::os_string_to_string(arg))
+            .collect()
+    }
+
+    /// Returns the display name of the service as a string. It returns an error if the display
+    /// name is not valid UTF-8.
+    pub fn display_name_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+        self.display_name
+            .as_ref()
+            .map(|name| util::os_string_to_string(name))
+            .transpose()
+    }
+
+    /// Returns the description of the service as a string. It returns an error if the description
+    /// is not valid UTF-8.
+    pub fn desc_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+        self.desc
+            .as_ref()
+            .map(|desc| util::os_string_to_string(desc))
+            .transpose()
+    }
+}
+
 // *** Service Manager ***
 
-// The service manager is a trait for lifecycle management of a given service
 pub(crate) trait ServiceManager {
-    fn install(
-        &self,
-        program: PathBuf,
-        args: Vec<OsString>,
-        display_name: OsString,
-        desc: OsString,
-        autostart: bool,
-    ) -> UniResult<(), ServiceErrKind>;
+    fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind>;
 
     fn uninstall(&self) -> UniResult<(), ServiceErrKind>;
 
@@ -178,19 +263,9 @@ impl UniServiceManager {
     /// to the user. The `desc` is the description of the service. After the method returns successfully, the
     /// service may or may not be installed yet, as this is platform-dependent. An error is returned if the
     /// service is already installed or if the installation fails.
-    pub fn install(
-        &self,
-        program: PathBuf,
-        args: Vec<OsString>,
-        display_name: OsString,
-        desc: OsString,
-        autostart: bool,
-    ) -> UniResult<(), ServiceErrKind> {
+    pub fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         match self.status() {
-            Ok(ServiceStatus::NotInstalled) => {
-                self.manager
-                    .install(program, args, display_name, desc, autostart)
-            }
+            Ok(ServiceStatus::NotInstalled) => self.manager.install(spec),
             Ok(_) => Err(ServiceErrKind::AlreadyInstalled.into_error()),
             Err(e) => Err(e),
         }
