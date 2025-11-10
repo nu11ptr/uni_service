@@ -8,6 +8,7 @@ use std::sync::mpsc::channel;
 #[cfg(windows)]
 use win_service::start_service;
 
+/// The result type for this crate. The error type is simply a boxed error trait object.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A service application.

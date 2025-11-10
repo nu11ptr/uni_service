@@ -33,22 +33,30 @@ fn make_service_manager(
 // *** Status ***
 
 /// The status of a service. Windows services can be in any of these states.
-/// Linux/macOS services will only ever either be `Running` or `Stopped`.
+/// Linux/macOS services will only ever be `NotInstalled`, `Running` or `Stopped`.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ServiceStatus {
+    /// The specified service is not installed.
     NotInstalled,
+    /// The specified service is stopped.
     Stopped,
+    /// The specified service is starting.
     StartPending,
+    /// The specified service is stopping.
     StopPending,
+    /// The specified service is running.
     Running,
+    /// The specified service is continuing.
     ContinuePending,
+    /// The specified service is pausing.
     PausePending,
+    /// The specified service is paused.
     Paused,
 }
 
 // *** Service Manager ***
 
-/// The service manager is a trait for lifecycle management of a given service
+// The service manager is a trait for lifecycle management of a given service
 pub(crate) trait ServiceManager {
     fn install(
         &self,
@@ -67,19 +75,32 @@ pub(crate) trait ServiceManager {
     fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind>;
 }
 
+/// The error type for service management operations.
 #[derive(Clone, Debug)]
 pub enum ServiceErrKind {
+    /// Service management is not available on this platform either because it's not
+    /// supported or because the service manager is not detected.
     ServiceManagementNotAvailable,
+    /// The service is already installed.
     AlreadyInstalled,
+    /// The service is not installed.
     NotInstalled,
+    /// The service is in the wrong state for the requested operation.
     WrongState(ServiceStatus),
+    /// The status operation timed out. Last status is returned.
     Timeout(ServiceStatus),
+    /// The operation timed out. Last error is returned.
     TimeoutError(Box<ServiceErrKind>),
+    /// The operation failed because an OS string wasn't valid UTF-8.
     BadUtf8,
+    /// The operation failed because a child process exited with a non-zero status.
     BadExitStatus(Option<i32>, String),
+    /// The operation failed because a directory was not found.
     DirectoryNotFound,
+    /// The operation failed because of an I/O error.
     IoError,
 
+    /// The operation failed because of an unknown error.
     Unknown,
 }
 
@@ -119,6 +140,9 @@ impl UniKind for ServiceErrKind {
 
 // *** UniServiceManager ***
 
+/// A service manager to manage services on the current system. It uses platform-specific implementations
+/// behind the scenes to perform the actual service management, but provides a unified interface regardless
+/// of the platform.
 pub struct UniServiceManager {
     manager: Box<dyn ServiceManager>,
 }
@@ -127,7 +151,8 @@ impl UniServiceManager {
     /// Creates a new service manager for the given service name. The `prefix` is a java-style
     /// reverse domain name prefix (e.g. `com.example.`) and is only used on macOS (ignored on other
     /// platforms). If `user` is `true`, the service applies directly to the current user only.
-    /// Windows does not support user-level services, so this is only available on macOS and Linux.
+    /// On Windows, user level services require administrator privileges to manage and won't start
+    /// until the first logon.
     pub fn new(
         name: impl Into<OsString>,
         prefix: impl Into<OsString>,
