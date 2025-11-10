@@ -70,6 +70,7 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
             args,
             "Test service".into(),
             "Test service description".into(),
+            false,
         )
         .unwrap();
     manager

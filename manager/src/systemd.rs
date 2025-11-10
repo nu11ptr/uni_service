@@ -93,6 +93,7 @@ impl ServiceManager for SystemDServiceManager {
         args: Vec<OsString>,
         _display_name: OsString,
         desc: OsString,
+        autostart: bool,
     ) -> UniResult<(), ServiceErrKind> {
         // Build service file
         let wanted_by = if self.user {
@@ -132,7 +133,9 @@ WantedBy={wanted_by}
         let file = self.make_file_name()?;
         write_file(&file, &service, SERVICE_PERMS)?;
 
-        self.system_ctl(Some("enable"))?;
+        if autostart {
+            self.system_ctl(Some("enable"))?;
+        }
         Ok(())
     }
 

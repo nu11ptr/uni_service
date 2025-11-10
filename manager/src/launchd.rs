@@ -124,6 +124,7 @@ impl ServiceManager for LaunchDServiceManager {
         args: Vec<OsString>,
         _display_name: OsString,
         _desc: OsString,
+        autostart: bool,
     ) -> UniResult<(), ServiceErrKind> {
         // Combine program and args into a single vector
         let mut new_args: Vec<OsString> = Vec::with_capacity(args.len() + 1);
@@ -147,6 +148,8 @@ impl ServiceManager for LaunchDServiceManager {
             .into_string()
             .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
 
+        let run_at_load = if autostart { "true" } else { "false" };
+
         let service = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -161,7 +164,7 @@ impl ServiceManager for LaunchDServiceManager {
         <key>KeepAlive</key>
         <false/>
         <key>RunAtLoad</key>
-        <false/>
+        <{run_at_load}/>
     </dict>
 </plist>
 "#,

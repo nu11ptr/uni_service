@@ -64,6 +64,7 @@ pub(crate) trait ServiceManager {
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
+        autostart: bool,
     ) -> UniResult<(), ServiceErrKind>;
 
     fn uninstall(&self) -> UniResult<(), ServiceErrKind>;
@@ -172,10 +173,12 @@ impl UniServiceManager {
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
+        autostart: bool,
     ) -> UniResult<(), ServiceErrKind> {
         match self.status() {
             Ok(ServiceStatus::NotInstalled) => {
-                self.manager.install(program, args, display_name, desc)
+                self.manager
+                    .install(program, args, display_name, desc, autostart)
             }
             Ok(_) => Err(ServiceErrKind::AlreadyInstalled.into_error()),
             Err(e) => Err(e),
