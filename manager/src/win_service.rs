@@ -46,7 +46,6 @@ impl WinServiceManager {
             Ok(output) if user => {
                 for line in output.lines() {
                     if line.starts_with("SERVICE_NAME:") {
-                        println!("{}", line);
                         // Service Name: <Template>_<LUID>
                         let luid = line.rfind('_').map(|idx| line[idx + 1..].into());
                         if let Some(luid) = luid {
@@ -146,6 +145,7 @@ impl ServiceManager for WinServiceManager {
             self.sc("description", Some(&self.name), vec![desc])?;
         }
 
+        self.just_installed.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -205,12 +205,15 @@ impl ServiceManager for WinServiceManager {
             }
             Err(e) => match e.kind_ref() {
                 ServiceErrKind::BadExitStatus(Some(2), _) => {
-                    Err(ServiceErrKind::ServicePathNotFound.into_error())
+                    Err(e.kind(ServiceErrKind::ServicePathNotFound))
                 }
                 ServiceErrKind::BadExitStatus(Some(5), _) => {
-                    Err(ServiceErrKind::AccessDenied.into_error())
+                    Err(e.kind(ServiceErrKind::AccessDenied))
                 }
                 ServiceErrKind::BadExitStatus(Some(1060), _) => Ok(ServiceStatus::NotInstalled),
+                ServiceErrKind::BadExitStatus(Some(1073), _) => {
+                    Err(e.kind(ServiceErrKind::AlreadyInstalled))
+                }
                 _ => Err(e),
             },
         }
