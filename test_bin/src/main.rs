@@ -161,7 +161,7 @@ fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut service = TestService::new(service_mode, client);
     service.hello()?;
 
-    run_service(Box::new(service), service_mode)?;
+    run_service(service, service_mode)?;
     Ok(())
 }
 

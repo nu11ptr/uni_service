@@ -25,22 +25,25 @@ pub trait ServiceApp {
 }
 
 #[cfg(not(windows))]
-fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
-    // Won't endlessly loop because this is only called when service_mode is true
-    run_service(app, false)
+fn start_service(mut app: Box<dyn ServiceApp + Send>) -> Result<()> {
+    run_interactive(&mut *app)
+}
+
+fn run_interactive(app: &mut (dyn ServiceApp + Send + 'static)) -> Result<()> {
+    app.start()?;
+    wait_for_shutdown()?;
+    app.stop()?;
+    Ok(())
 }
 
 // NOTE: Windows operates in two possible modes: regular or services mode. UNIX variants operate just in regular mode
 /// Executes a service. If being started by the service manager, `service_mode` must be `true`.
 /// If being started interactively, `service_mode` must be `false`.
-pub fn run_service(mut app: Box<dyn ServiceApp + Send>, service_mode: bool) -> Result<()> {
+pub fn run_service(mut app: impl ServiceApp + Send + 'static, service_mode: bool) -> Result<()> {
     if service_mode {
-        start_service(app)
+        start_service(Box::new(app))
     } else {
-        app.start()?;
-        wait_for_shutdown()?;
-        app.stop()?;
-        Ok(())
+        run_interactive(&mut app)
     }
 }
 
