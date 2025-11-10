@@ -21,6 +21,3 @@ libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dirs.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-service.workspace = true

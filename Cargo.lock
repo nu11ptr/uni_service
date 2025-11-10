@@ -371,7 +371,6 @@ dependencies = [
  "libc",
  "tracing",
  "uni_error",
- "windows-service",
 ]
 
 [[package]]

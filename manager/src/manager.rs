@@ -96,10 +96,16 @@ pub enum ServiceErrKind {
     BadUtf8,
     /// The operation failed because a child process exited with a non-zero status.
     BadExitStatus(Option<i32>, String),
+    /// The service path was not found.
+    ServicePathNotFound,
+    /// The operation failed due to insufficient permissions.
+    AccessDenied,
     /// The operation failed because a directory was not found.
     DirectoryNotFound,
     /// The operation failed because of an I/O error.
     IoError,
+    /// The operation failed because of a platform-specific error.
+    PlatformError(Option<i64>),
 
     /// The operation failed because of an unknown error.
     Unknown,
@@ -126,15 +132,20 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::TimeoutError(kind) => {
                 format!("Timeout waiting for service status. Last error: {:?}", kind).into()
             }
-            ServiceErrKind::Unknown => "Unknown error".into(),
             ServiceErrKind::BadUtf8 => "Bad UTF-8 encoding".into(),
             ServiceErrKind::BadExitStatus(code, msg) => format!(
                 "Bad child process exit status. Code: {:?}. Stderr: {}",
                 code, msg
             )
             .into(),
+            ServiceErrKind::ServicePathNotFound => "The service path was not found".into(),
+            ServiceErrKind::AccessDenied => "Access denied".into(),
             ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
             ServiceErrKind::IoError => "An I/O error occurred".into(),
+            ServiceErrKind::PlatformError(code) => {
+                format!("A platform-specific error occurred. Code: {:?}", code).into()
+            }
+            ServiceErrKind::Unknown => "Unknown error".into(),
         })
     }
 }

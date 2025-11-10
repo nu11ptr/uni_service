@@ -1,46 +1,117 @@
+use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use uni_error::{ErrorContext as _, ResultContext as _, UniResult};
-use windows_service::service::{
-    Service as WindowsService, ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType,
-    ServiceState, ServiceType,
-};
-use windows_service::service_manager::ServiceManagerAccess;
-use windows_service::{Error, service_manager};
+use uni_error::{ErrorContext as _, ResultContext as _, UniError, UniKind as _, UniResult};
 
 use crate::manager::{ServiceErrKind, ServiceManager, ServiceStatus};
+
+const SC_EXE: &str = "sc.exe";
 
 pub(crate) fn make_service_manager(
     name: OsString,
     _prefix: OsString,
     user: bool,
 ) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
-    Ok(Box::new(WinServiceManager { name, user }))
+    WinServiceManager::new(name, user).map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
 // *** WinServiceManager ***
 
 struct WinServiceManager {
     name: OsString,
-    user: bool,
+    luid: Option<OsString>,
+    just_installed: AtomicBool,
 }
 
 impl WinServiceManager {
-    fn open_service(&self, flags: ServiceAccess) -> UniResult<WindowsService, ServiceErrKind> {
-        tracing::debug!("Opening service: {:?}", self.name);
-        let manager_access = ServiceManagerAccess::CONNECT;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)
-                .kind(ServiceErrKind::Unknown)?;
-        match service_manager.open_service(&self.name, flags) {
-            Ok(service) => Ok(service),
-            Err(Error::Winapi(err)) if err.raw_os_error() == Some(1060) => {
-                // Put the error back the way it was
-                let err = Error::Winapi(err);
-                Err(err.kind(ServiceErrKind::NotInstalled))
+    fn new(name: OsString, user: bool) -> UniResult<Self, ServiceErrKind> {
+        let mut mgr = Self {
+            name,
+            luid: None,
+            just_installed: AtomicBool::new(false),
+        };
+
+        // If this is a user service, we need to get the LUID of the current user
+        let args = if user {
+            // Default is only 'active' services which should all have a LUID suffix
+            vec!["type=".as_ref(), "userservice".as_ref()]
+        } else {
+            vec![]
+        };
+
+        match mgr.sc("query", None, args) {
+            // User service - get the LUID of the current user
+            Ok(output) if user => {
+                for line in output.lines() {
+                    if line.starts_with("SERVICE_NAME:") {
+                        println!("{}", line);
+                        // Service Name: <Template>_<LUID>
+                        let luid = line.rfind('_').map(|idx| line[idx + 1..].into());
+                        if let Some(luid) = luid {
+                            mgr.luid = Some(luid);
+                            return Ok(mgr);
+                        }
+                    }
+                }
+
+                Err(UniError::from_kind_context(
+                    ServiceErrKind::ServiceManagementNotAvailable,
+                    "User services are not supported on this system",
+                ))
             }
-            Err(e) => Err(e.kind(ServiceErrKind::Unknown)),
+            // System service - just confirm we can query services
+            Ok(_) => Ok(mgr),
+            Err(e) => Err(e.kind_context(
+                ServiceErrKind::ServiceManagementNotAvailable,
+                "sc.exe is not available on this system",
+            )),
+        }
+    }
+
+    fn sc(
+        &self,
+        sub_cmd: &str,
+        name: Option<&OsStr>,
+        args: Vec<&OsStr>,
+    ) -> UniResult<String, ServiceErrKind> {
+        let mut command = Command::new(SC_EXE);
+
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        command.arg(sub_cmd);
+        if let Some(name) = name {
+            command.arg(name);
+        }
+
+        for arg in args {
+            command.arg(arg);
+        }
+
+        tracing::debug!("Executing command: {:?}", command);
+        let output = command.output().kind(ServiceErrKind::IoError)?;
+        if output.status.success() {
+            Ok(String::from_utf8(output.stdout).kind(ServiceErrKind::BadUtf8)?)
+        } else {
+            let msg = String::from_utf8(output.stderr).kind(ServiceErrKind::BadUtf8)?;
+            Err(ServiceErrKind::BadExitStatus(output.status.code(), msg).into_error())
+        }
+    }
+
+    fn instance_name(&self) -> Cow<'_, OsStr> {
+        if let Some(luid) = &self.luid {
+            let mut instance_name = OsString::with_capacity(self.name.len() + luid.len() + 1);
+            instance_name.push(&self.name);
+            instance_name.push("_");
+            instance_name.push(luid);
+            instance_name.into()
+        } else {
+            Cow::Borrowed(&self.name)
         }
     }
 }
@@ -52,82 +123,118 @@ impl ServiceManager for WinServiceManager {
         args: Vec<OsString>,
         display_name: OsString,
         desc: OsString,
+        autostart: bool,
     ) -> UniResult<(), ServiceErrKind> {
-        let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
-        let service_manager =
-            service_manager::ServiceManager::local_computer(None::<&str>, manager_access)
-                .kind(ServiceErrKind::Unknown)?;
-
-        let service_type = if self.user {
-            ServiceType::USER_OWN_PROCESS
+        let type_ = if self.luid.is_none() {
+            "own"
         } else {
-            ServiceType::OWN_PROCESS
+            "userown"
         };
 
-        let service_info = ServiceInfo {
-            name: self.name.clone(),
-            display_name,
-            service_type,
-            start_type: ServiceStartType::OnDemand,
-            error_control: ServiceErrorControl::Normal,
-            executable_path: program,
-            launch_arguments: args,
-            dependencies: vec![],
-            account_name: None, // TODO: Handle alternate users?
-            account_password: None,
-        };
-        tracing::debug!("Creating service: {:?}", service_info);
-        let service = service_manager
-            .create_service(&service_info, ServiceAccess::CHANGE_CONFIG)
-            .kind(ServiceErrKind::Unknown)?;
-        service
-            .set_description(&desc)
-            .kind(ServiceErrKind::Unknown)?;
+        let display_name = display_name
+            .into_string()
+            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
 
+        let desc = desc
+            .into_string()
+            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+
+        let program_str = program
+            .into_os_string()
+            .into_string()
+            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let args = args
+            .join(" ".as_ref())
+            .into_string()
+            .map_err(|_| ServiceErrKind::BadUtf8.into_error())?;
+        let program = format!("{program_str} {args}");
+
+        let start = if autostart { "auto" } else { "demand" };
+
+        self.sc(
+            "create",
+            Some(&self.name),
+            vec![
+                "type=".as_ref(),
+                type_.as_ref(),
+                "DisplayName=".as_ref(),
+                display_name.as_ref(),
+                "binPath=".as_ref(),
+                program.as_ref(),
+                "start=".as_ref(),
+                start.as_ref(),
+            ],
+        )?;
+        self.sc("description", Some(&self.name), vec![desc.as_ref()])?;
+
+        self.just_installed.store(true, Ordering::Relaxed);
         Ok(())
     }
 
     fn uninstall(&self) -> UniResult<(), ServiceErrKind> {
-        let service = self.open_service(ServiceAccess::DELETE)?;
         tracing::debug!("Deleting service");
-        service.delete().kind(ServiceErrKind::Unknown)?;
+        self.sc("delete", Some(&self.name), vec![])?;
         Ok(())
     }
 
     fn start(&self) -> UniResult<(), ServiceErrKind> {
-        let service = self.open_service(ServiceAccess::START)?;
         tracing::debug!("Starting service");
-        service
-            .start(&[OsStr::new("Starting...")])
-            .kind(ServiceErrKind::Unknown)?;
+        self.sc("start", Some(self.instance_name().as_ref()), vec![])?;
         Ok(())
     }
 
     fn stop(&self) -> UniResult<(), ServiceErrKind> {
-        let service = self.open_service(ServiceAccess::STOP)?;
         tracing::debug!("Stopping service");
-        service.stop().kind(ServiceErrKind::Unknown)?;
+        self.sc("stop", Some(self.instance_name().as_ref()), vec![])?;
         Ok(())
     }
 
     fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
-        let service = match self.open_service(ServiceAccess::QUERY_STATUS) {
-            Ok(service) => service,
-            Err(e) if matches!(e.kind_ref(), ServiceErrKind::NotInstalled) => {
-                return Ok(ServiceStatus::NotInstalled);
-            }
-            Err(e) => return Err(e),
+        // User services require a logoff/logon before instances are even created, so
+        // use the template status until that happens
+        let name = if self.just_installed.load(Ordering::Relaxed) {
+            Cow::Borrowed(self.name.as_os_str())
+        } else {
+            self.instance_name()
         };
-        let service_status = service.query_status().kind(ServiceErrKind::Unknown)?;
 
-        match service_status.current_state {
-            ServiceState::Running => Ok(ServiceStatus::Running),
-            ServiceState::Stopped => Ok(ServiceStatus::Stopped),
-            ServiceState::StartPending => Ok(ServiceStatus::StartPending),
-            ServiceState::StopPending => Ok(ServiceStatus::StopPending),
-            ServiceState::ContinuePending => Ok(ServiceStatus::ContinuePending),
-            ServiceState::PausePending => Ok(ServiceStatus::PausePending),
-            ServiceState::Paused => Ok(ServiceStatus::Paused),
+        match self.sc("query", Some(&name), vec![]) {
+            Ok(output) => {
+                for line in output.lines() {
+                    let mut tokens = line.split_whitespace();
+
+                    if tokens.next() == Some("STATE")
+                        && tokens.next() == Some(":")
+                        // Numeric state code
+                        && tokens.next().is_some()
+                    {
+                        if let Some(state) = tokens.next() {
+                            return match state {
+                                "RUNNING" => Ok(ServiceStatus::Running),
+                                "STOPPED" => Ok(ServiceStatus::Stopped),
+                                "START_PENDING" => Ok(ServiceStatus::StartPending),
+                                "STOP_PENDING" => Ok(ServiceStatus::StopPending),
+                                "CONTINUE_PENDING" => Ok(ServiceStatus::ContinuePending),
+                                "PAUSE_PENDING" => Ok(ServiceStatus::PausePending),
+                                "PAUSED" => Ok(ServiceStatus::Paused),
+                                _ => Err(ServiceErrKind::Unknown.into_error()),
+                            };
+                        }
+                    }
+                }
+
+                Err(ServiceErrKind::Unknown.into_error())
+            }
+            Err(e) => match e.kind_ref() {
+                ServiceErrKind::BadExitStatus(Some(2), _) => {
+                    Err(ServiceErrKind::ServicePathNotFound.into_error())
+                }
+                ServiceErrKind::BadExitStatus(Some(5), _) => {
+                    Err(ServiceErrKind::AccessDenied.into_error())
+                }
+                ServiceErrKind::BadExitStatus(Some(1060), _) => Ok(ServiceStatus::NotInstalled),
+                _ => Err(e),
+            },
         }
     }
 }
