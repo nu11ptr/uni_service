@@ -3,7 +3,7 @@ mod common;
 use std::{process::Command, sync::OnceLock, thread, time::Duration};
 
 use send_ctrlc::{Interruptible as _, InterruptibleCommand as _};
-use uni_service_manager::{ServiceSpec, ServiceStatus, UniServiceManager};
+use uni_service_manager::{ServiceCapabilities, ServiceSpec, ServiceStatus, UniServiceManager};
 
 use crate::common::TcpServer;
 
@@ -44,7 +44,7 @@ fn test_service_interactive() {
     command.wait().unwrap();
 }
 
-fn test_service(name: &str, user: bool, test_execution: bool) {
+fn test_service(name: &str, user: bool) {
     // Hardcoded so only one test supported at a time!
     const SERVER_ADDRESS: &str = "127.0.0.1:53165";
 
@@ -56,6 +56,11 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
         .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
         .unwrap();
 
+    let ready_to_start = !user
+        || !manager
+            .capabilities()
+            .contains(ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON);
+
     let spec = ServiceSpec::new(bin_path)
         .arg("service")
         .unwrap()
@@ -64,7 +69,7 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
         .description("Test service description")
         .unwrap();
 
-    let spec = if test_execution {
+    let spec = if ready_to_start {
         spec.arg(SERVER_ADDRESS).unwrap()
     } else {
         spec
@@ -75,7 +80,7 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
         .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
         .unwrap();
 
-    if test_execution {
+    if ready_to_start {
         let handle = thread::spawn(move || {
             let mut server = TcpServer::new(SERVER_ADDRESS).unwrap();
             server.wait_for_connection(TIMEOUT).unwrap();
@@ -101,6 +106,10 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
             .unwrap();
         handle.join().unwrap();
         // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
+    } else {
+        tracing::warn!(
+            "Skipping service execution because this is a user service that requires a new logon"
+        );
     }
 
     manager.uninstall().unwrap();
@@ -114,7 +123,7 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
 #[test]
 fn test_windows_user_service() {
     init_tracing();
-    test_service("user_test", true, false);
+    test_service("user_test", true);
 }
 
 // Regular user can install/uninstall
@@ -122,7 +131,7 @@ fn test_windows_user_service() {
 #[test]
 fn test_windows_system_service() {
     init_tracing();
-    test_service("system_test", false, true);
+    test_service("system_test", false);
 }
 
 #[cfg(not(windows))]
@@ -136,7 +145,7 @@ fn is_root() -> bool {
 fn test_unix_user_service() {
     init_tracing();
     if !is_root() {
-        test_service("user_test", true, true);
+        test_service("user_test", true);
     } else {
         tracing::warn!("Skipping 'test_unix_user_service' because not running as user");
     }
@@ -148,7 +157,7 @@ fn test_unix_user_service() {
 fn test_unix_system_service() {
     init_tracing();
     if is_root() {
-        test_service("system_test", false, true);
+        test_service("system_test", false);
     } else {
         tracing::warn!("Skipping 'test_unix_system_service' because not running as root");
     }
