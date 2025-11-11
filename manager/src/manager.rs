@@ -13,12 +13,12 @@ use uni_error::{ErrorContext as _, UniKind, UniResult};
 
 #[cfg(target_os = "macos")]
 use crate::launchd::make_service_manager;
+#[cfg(windows)]
+use crate::sc::make_service_manager;
 #[cfg(target_os = "linux")]
 use crate::systemd::make_service_manager;
 #[cfg(not(target_os = "windows"))]
 use crate::util;
-#[cfg(windows)]
-use crate::win_service::make_service_manager;
 
 #[cfg(all(
     not(target_os = "windows"),
