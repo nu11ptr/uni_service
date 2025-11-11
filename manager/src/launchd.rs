@@ -130,13 +130,17 @@ impl ServiceManager for LaunchDServiceManager {
         // Make the service target label
         let label = util::os_string_to_string(self.make_service_target(false))?;
 
+        if spec.restart_on_failure && !spec.autostart {
+            return Err(ServiceErrKind::RestartOnFailureRequiresAutostart.into_error());
+        }
+
         let restart = if spec.restart_on_failure {
             format!(
                 r#"        <key>KeepAlive</key>
         <dict>
             <key>SuccessfulExit</key>
             <false/>
-            <key>Crash</key>
+            <key>Crashed</key>
             <true/>
         </dict>
 "#
@@ -173,8 +177,7 @@ impl ServiceManager for LaunchDServiceManager {
         <array>
 {args}
         </array>
-{user}{group}
-{restart}
+{user}{group}{restart}
         <key>RunAtLoad</key>
         <{run_at_load}/>
     </dict>
@@ -249,5 +252,6 @@ impl ServiceManager for LaunchDServiceManager {
 
     fn capabilities(&self) -> ServiceCapabilities {
         ServiceCapabilities::SupportsCustomGroup
+            | ServiceCapabilities::RestartOnFailureRequiresAutostart
     }
 }

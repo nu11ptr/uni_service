@@ -61,8 +61,8 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
     let spec = ServiceSpec::new(bin_path)
         .arg("service")
         .display_name("Test service")
-        .desc("Test service description")
-        .set_restart_on_failure();
+        .desc("Test service description");
+
     let spec = if test_execution {
         spec.arg(SERVER_ADDRESS)
     } else {

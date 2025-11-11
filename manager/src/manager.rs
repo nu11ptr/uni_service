@@ -200,6 +200,8 @@ bitflags! {
         const SupportsCustomGroup = 1 << 1;
         /// The user services require a new logon before they can be started.
         const UserServicesRequireNewLogon = 1 << 2;
+        /// The service requires autostart to be enabled when restarting on failure is enabled.
+        const RestartOnFailureRequiresAutostart = 1 << 3;
     }
 }
 
@@ -247,6 +249,8 @@ pub enum ServiceErrKind {
     DirectoryNotFound,
     /// The operation failed because a user was specified without a password.
     UserRequiresPassword,
+    /// The operation failed because restarting on failure is enabled but autostart is not enabled.
+    RestartOnFailureRequiresAutostart,
     /// The operation failed because of an I/O error.
     IoError,
     /// The operation failed because of a platform-specific error.
@@ -288,6 +292,9 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
             ServiceErrKind::UserRequiresPassword => {
                 "A user was specified without a password".into()
+            }
+            ServiceErrKind::RestartOnFailureRequiresAutostart => {
+                "Restarting on failure is enabled but autostart is not enabled".into()
             }
             ServiceErrKind::IoError => "An I/O error occurred".into(),
             ServiceErrKind::PlatformError(code) => {
