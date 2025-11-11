@@ -366,6 +366,7 @@ dependencies = [
 name = "uni_service_manager"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "dirs",
  "libc",
  "tracing",

@@ -5,8 +5,9 @@ use std::process::{Command, Stdio};
 
 use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
 
-use crate::ServiceErrKind;
-use crate::manager::{ServiceManager, ServiceSpec, ServiceStatus};
+use crate::manager::{
+    ServiceCapabilities, ServiceErrKind, ServiceManager, ServiceSpec, ServiceStatus,
+};
 use crate::unix_util::{SERVICE_PERMS, write_file};
 
 const GLOBAL_PATH: &str = "/etc/systemd/system";
@@ -158,5 +159,9 @@ WantedBy={wanted_by}
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn capabilities(&self) -> ServiceCapabilities {
+        ServiceCapabilities::SupportsCustomGroup
     }
 }

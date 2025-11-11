@@ -7,7 +7,7 @@ use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
 
 use crate::manager::{ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};
-use crate::{ServiceErrKind, ServiceSpec, util};
+use crate::{ServiceCapabilities, ServiceErrKind, ServiceSpec, util};
 
 const GLOBAL_PATH: &str = "/Library/LaunchDaemons";
 const LAUNCH_CTL: &str = "launchctl";
@@ -215,5 +215,9 @@ impl ServiceManager for LaunchDServiceManager {
                 _ => Err(e),
             },
         }
+    }
+
+    fn capabilities(&self) -> ServiceCapabilities {
+        ServiceCapabilities::SupportsCustomGroup
     }
 }

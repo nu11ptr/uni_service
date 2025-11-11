@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bitflags::bitflags;
 use uni_error::{ErrorContext as _, UniKind, UniResult};
 
 // *** make_service_manager ***
@@ -147,6 +148,20 @@ impl ServiceSpec {
     }
 }
 
+// *** Service Capabilities ***
+
+bitflags! {
+    /// The capabilities of a service manager.
+    pub struct ServiceCapabilities: u32 {
+        /// The service requires a password when a custom user is used.
+        const CustomUserRequiresPassword = 1 << 0;
+        /// The service supports running as with a custom group.
+        const SupportsCustomGroup = 1 << 1;
+        /// The user services require a new logon before they can be started.
+        const UserServicesRequireNewLogon = 1 << 2;
+    }
+}
+
 // *** Service Manager ***
 
 pub(crate) trait ServiceManager {
@@ -159,6 +174,8 @@ pub(crate) trait ServiceManager {
     fn stop(&self) -> UniResult<(), ServiceErrKind>;
 
     fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind>;
+
+    fn capabilities(&self) -> ServiceCapabilities;
 }
 
 /// The error type for service management operations.
@@ -308,6 +325,11 @@ impl UniServiceManager {
     /// or if the status cannot be determined.
     pub fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
         self.manager.status()
+    }
+
+    /// Gets the capabilities of the service manager.
+    pub fn capabilities(&self) -> ServiceCapabilities {
+        self.manager.capabilities()
     }
 
     /// Waits for the service to reach the desired status. It returns an error if the service is not installed

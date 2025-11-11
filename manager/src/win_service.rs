@@ -4,7 +4,9 @@ use std::process::{Command, Stdio};
 
 use uni_error::{ErrorContext as _, ResultContext as _, UniError, UniKind as _, UniResult};
 
-use crate::manager::{ServiceErrKind, ServiceManager, ServiceSpec, ServiceStatus};
+use crate::manager::{
+    ServiceCapabilities, ServiceErrKind, ServiceManager, ServiceSpec, ServiceStatus,
+};
 
 const SC_EXE: &str = "sc.exe";
 
@@ -227,5 +229,10 @@ impl ServiceManager for WinServiceManager {
             (Some(_), ServiceStatus::NotInstalled) => self.raw_status(self.name.as_ref()),
             (_, status) => Ok(status),
         }
+    }
+
+    fn capabilities(&self) -> ServiceCapabilities {
+        ServiceCapabilities::UserServicesRequireNewLogon
+            | ServiceCapabilities::CustomUserRequiresPassword
     }
 }

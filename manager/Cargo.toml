@@ -12,6 +12,7 @@ readme = "README.md"
 edition = "2024"
 
 [dependencies]
+bitflags.workspace = true
 tracing.workspace = true
 uni_error.workspace = true
 

@@ -6,6 +6,7 @@ members = ["manager", "service", "test_bin"]
 uni_service = { path = "service" }
 uni_service_manager = { path = "manager" }
 
+bitflags = "2"
 ctrlc = { version = "3", features = ["termination"] }
 dirs = "6"
 libc = "0.2"
