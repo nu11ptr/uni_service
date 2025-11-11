@@ -7,7 +7,7 @@ use std::{
 };
 
 use bitflags::bitflags;
-use uni_error::{ErrorContext as _, UniKind, UniResult};
+use uni_error::{ErrorContext as _, UniError, UniKind, UniResult};
 
 // *** make_service_manager ***
 
@@ -68,7 +68,7 @@ pub struct ServiceSpec {
     /// The display name of the service.
     pub display_name: Option<OsString>,
     /// The description of the service.
-    pub desc: Option<OsString>,
+    pub description: Option<OsString>,
     /// Whether the service should start automatically when the system boots or user logs in.
     pub autostart: bool,
     /// Whether the service should be restarted if it fails.
@@ -88,7 +88,7 @@ impl ServiceSpec {
             path: path.into(),
             args: vec![],
             display_name: None,
-            desc: None,
+            description: None,
             autostart: false,
             restart_on_failure: false,
             user: None,
@@ -97,22 +97,35 @@ impl ServiceSpec {
         }
     }
 
+    fn validate(field: OsString) -> UniResult<OsString, ServiceErrKind> {
+        if field.is_empty() {
+            return Err(UniError::from_kind_context(
+                ServiceErrKind::BadServiceSpec,
+                "Field cannot be empty",
+            ));
+        }
+        Ok(field)
+    }
+
     /// Adds an argument to the executable.
-    pub fn arg(mut self, arg: impl Into<OsString>) -> Self {
-        self.args.push(arg.into());
-        self
+    pub fn arg(mut self, arg: impl Into<OsString>) -> UniResult<Self, ServiceErrKind> {
+        self.args.push(Self::validate(arg.into())?);
+        Ok(self)
     }
 
     /// Sets the display name of the service.
-    pub fn display_name(mut self, display_name: impl Into<OsString>) -> Self {
-        self.display_name = Some(display_name.into());
-        self
+    pub fn display_name(
+        mut self,
+        display_name: impl Into<OsString>,
+    ) -> UniResult<Self, ServiceErrKind> {
+        self.display_name = Some(Self::validate(display_name.into())?);
+        Ok(self)
     }
 
     /// Sets the description of the service.
-    pub fn desc(mut self, desc: impl Into<OsString>) -> Self {
-        self.desc = Some(desc.into().into());
-        self
+    pub fn description(mut self, desc: impl Into<OsString>) -> UniResult<Self, ServiceErrKind> {
+        self.description = Some(Self::validate(desc.into())?);
+        Ok(self)
     }
 
     /// Sets whether the service should start automatically when the system boots or user logs in.
@@ -128,21 +141,24 @@ impl ServiceSpec {
     }
 
     /// Sets the user to run the service as.
-    pub fn set_user(mut self, user: impl Into<OsString>) -> Self {
-        self.user = Some(user.into());
-        self
+    pub fn set_user(mut self, user: impl Into<OsString>) -> UniResult<Self, ServiceErrKind> {
+        self.user = Some(Self::validate(user.into())?);
+        Ok(self)
     }
 
     /// Sets the password to use for the user.
-    pub fn set_password(mut self, password: impl Into<OsString>) -> Self {
-        self.password = Some(password.into());
-        self
+    pub fn set_password(
+        mut self,
+        password: impl Into<OsString>,
+    ) -> UniResult<Self, ServiceErrKind> {
+        self.password = Some(Self::validate(password.into())?);
+        Ok(self)
     }
 
     /// Sets the group to run the service as.
-    pub fn set_group(mut self, group: impl Into<OsString>) -> Self {
-        self.group = Some(group.into());
-        self
+    pub fn set_group(mut self, group: impl Into<OsString>) -> UniResult<Self, ServiceErrKind> {
+        self.group = Some(Self::validate(group.into())?);
+        Ok(self)
     }
 
     pub(crate) fn path_and_args(&self) -> Vec<&OsStr> {
@@ -165,8 +181,8 @@ impl ServiceSpec {
     }
 
     #[cfg(target_os = "linux")]
-    pub(crate) fn desc_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
-        self.desc
+    pub(crate) fn description_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+        self.description
             .as_ref()
             .map(|desc| util::os_string_to_string(desc))
             .transpose()
@@ -205,15 +221,25 @@ bitflags! {
         /// The service uses a name prefix.
         const USES_NAME_PREFIX = 1 << 4;
         /// User services require elevated privileges to be installed.
-        const ELEVATED_PRIV_REQUIRED_FOR_USER_INSTALL = 1 << 5;
+        const USER_SERVICES_REQ_ELEVATED_PRIV_FOR_INSTALL = 1 << 5;
         /// The service supports pending and pause states.
         const SUPPORTS_PENDING_PAUSED_STATES = 1 << 6;
+        /// Fully qualified user service names are dynamic change between sessions. They should not be stored.
+        const USER_SERVICE_NAME_IS_DYNAMIC = 1 << 7;
+        /// The service supports a custom description.
+        const SUPPORTS_DESCRIPTION = 1 << 8;
+        /// The service supports a custom display name.
+        const SUPPORTS_DISPLAY_NAME = 1 << 9;
     }
 }
 
 // *** Service Manager ***
 
 pub(crate) trait ServiceManager {
+    fn fully_qualified_name(&self) -> Cow<'_, OsStr>;
+
+    fn is_user_service(&self) -> bool;
+
     fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind>;
 
     fn uninstall(&self) -> UniResult<(), ServiceErrKind>;
@@ -237,6 +263,8 @@ pub enum ServiceErrKind {
     AlreadyInstalled,
     /// The service is not installed.
     NotInstalled,
+    /// The service name or prefix is invalid.
+    InvalidNameOrPrefix,
     /// The service is in the wrong state for the requested operation.
     WrongState(ServiceStatus),
     /// The status operation timed out. Last status is returned.
@@ -253,10 +281,8 @@ pub enum ServiceErrKind {
     AccessDenied,
     /// The operation failed because a directory was not found.
     DirectoryNotFound,
-    /// The operation failed because a user was specified without a password.
-    UserRequiresPassword,
-    /// The operation failed because restarting on failure is enabled but autostart is not enabled.
-    RestartOnFailureRequiresAutostart,
+    /// The operation failed because the service specification is invalid.
+    BadServiceSpec,
     /// The operation failed because of an I/O error.
     IoError,
     /// The operation failed because of a platform-specific error.
@@ -274,6 +300,7 @@ impl UniKind for ServiceErrKind {
             }
             ServiceErrKind::AlreadyInstalled => "Service is already installed".into(),
             ServiceErrKind::NotInstalled => "Service is not installed".into(),
+            ServiceErrKind::InvalidNameOrPrefix => "Service name or prefix is invalid".into(),
             ServiceErrKind::WrongState(status) => format!(
                 "Service is in the wrong state for the requested operation. Current status: {:?}",
                 status
@@ -296,12 +323,7 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::ServicePathNotFound => "The service path was not found".into(),
             ServiceErrKind::AccessDenied => "Access denied".into(),
             ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
-            ServiceErrKind::UserRequiresPassword => {
-                "A user was specified without a password".into()
-            }
-            ServiceErrKind::RestartOnFailureRequiresAutostart => {
-                "Restarting on failure is enabled but autostart is not enabled".into()
-            }
+            ServiceErrKind::BadServiceSpec => "The service specification is invalid".into(),
             ServiceErrKind::IoError => "An I/O error occurred".into(),
             ServiceErrKind::PlatformError(code) => {
                 format!("A platform-specific error occurred. Code: {:?}", code).into()
@@ -331,7 +353,24 @@ impl UniServiceManager {
         prefix: impl Into<OsString>,
         user: bool,
     ) -> UniResult<Self, ServiceErrKind> {
-        make_service_manager(name.into(), prefix.into(), user).map(|manager| Self { manager })
+        let name = name.into();
+        if name.is_empty() {
+            return Err(UniError::from_kind_context(
+                ServiceErrKind::InvalidNameOrPrefix,
+                "The service name cannot be empty",
+            ));
+        }
+        make_service_manager(name, prefix.into(), user).map(|manager| Self { manager })
+    }
+
+    /// Gets the fully qualified name of the service. Note that Windows user services have a dynamic name that changes between sessions.
+    pub fn fully_qualified_name(&self) -> Cow<'_, OsStr> {
+        self.manager.fully_qualified_name()
+    }
+
+    /// `true` if the service is a user service, `false` if it is a system service.
+    pub fn is_user_service(&self) -> bool {
+        self.manager.is_user_service()
     }
 
     /// Installs the service. The `program` is the path to the executable to run when the service starts.
@@ -341,7 +380,49 @@ impl UniServiceManager {
     /// service is already installed or if the installation fails.
     pub fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         match self.status() {
-            Ok(ServiceStatus::NotInstalled) => self.manager.install(spec),
+            Ok(ServiceStatus::NotInstalled) => {
+                if self.is_user_service()
+                    && (spec.user.is_some() || spec.group.is_some() || spec.password.is_some())
+                {
+                    return Err(UniError::from_kind_context(
+                        ServiceErrKind::BadServiceSpec,
+                        "User services cannot be installed with a custom user, group, or password",
+                    ));
+                }
+
+                let capabilities = self.capabilities();
+
+                if capabilities.contains(ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART)
+                    && spec.restart_on_failure
+                    && !spec.autostart
+                {
+                    return Err(UniError::from_kind_context(
+                        ServiceErrKind::BadServiceSpec,
+                        "Restarting on failure without autostart is not supported on this platform",
+                    ));
+                }
+
+                if capabilities.contains(ServiceCapabilities::CUSTOM_USER_REQUIRES_PASSWORD)
+                    && spec.user.is_some()
+                    && spec.password.is_none()
+                {
+                    return Err(UniError::from_kind_context(
+                        ServiceErrKind::BadServiceSpec,
+                        "A password is required when a custom username is specified",
+                    ));
+                }
+
+                if !capabilities.contains(ServiceCapabilities::SUPPORTS_CUSTOM_GROUP)
+                    && spec.group.is_some()
+                {
+                    return Err(UniError::from_kind_context(
+                        ServiceErrKind::BadServiceSpec,
+                        "Custom groups are not supported",
+                    ));
+                }
+
+                self.manager.install(spec)
+            }
             Ok(_) => Err(ServiceErrKind::AlreadyInstalled.into_error()),
             Err(e) => Err(e),
         }

@@ -60,11 +60,14 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
 
     let spec = ServiceSpec::new(bin_path)
         .arg("service")
+        .unwrap()
         .display_name("Test service")
-        .desc("Test service description");
+        .unwrap()
+        .description("Test service description")
+        .unwrap();
 
     let spec = if test_execution {
-        spec.arg(SERVER_ADDRESS)
+        spec.arg(SERVER_ADDRESS).unwrap()
     } else {
         spec
     };

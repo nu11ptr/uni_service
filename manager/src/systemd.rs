@@ -1,4 +1,5 @@
-use std::ffi::OsString;
+use std::borrow::Cow;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -88,6 +89,14 @@ impl SystemDServiceManager {
 }
 
 impl ServiceManager for SystemDServiceManager {
+    fn fully_qualified_name(&self) -> Cow<'_, OsStr> {
+        Cow::Borrowed(&self.name)
+    }
+
+    fn is_user_service(&self) -> bool {
+        self.user
+    }
+
     fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         // Build service file
         let wanted_by = if self.user {
@@ -97,7 +106,7 @@ impl ServiceManager for SystemDServiceManager {
         };
 
         let args = spec.path_and_args_string()?.join(" ");
-        let desc = match spec.desc_string()? {
+        let desc = match spec.description_string()? {
             Some(desc) => format!("Description={desc}\n"),
             None => String::new(),
         };
@@ -178,6 +187,6 @@ WantedBy={wanted_by}
     }
 
     fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
+        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP | ServiceCapabilities::SUPPORTS_DESCRIPTION
     }
 }

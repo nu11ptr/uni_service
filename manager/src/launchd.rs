@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::PathBuf;
@@ -17,6 +18,16 @@ pub(crate) fn make_service_manager(
     prefix: OsString,
     user: bool,
 ) -> UniResult<Box<dyn ServiceManager>, ServiceErrKind> {
+    let prefix_str = util::os_string_to_string(prefix.clone()).kind_context(
+        ServiceErrKind::InvalidNameOrPrefix,
+        "The prefix must be valid UTF-8",
+    )?;
+    if prefix_str.is_empty() || prefix_str.len() < 2 || !prefix_str.ends_with('.') {
+        return Err(UniError::from_kind_context(
+            ServiceErrKind::InvalidNameOrPrefix,
+            "The service prefix must be a valid reverse domain name and end with a dot",
+        ));
+    }
     LaunchDServiceManager::new(name, prefix, user)
         .map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
@@ -118,6 +129,14 @@ impl LaunchDServiceManager {
 }
 
 impl ServiceManager for LaunchDServiceManager {
+    fn fully_qualified_name(&self) -> Cow<'_, OsStr> {
+        self.make_service_target(true).into()
+    }
+
+    fn is_user_service(&self) -> bool {
+        self.user
+    }
+
     fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         // Convert each argument to a string and format it for the service file
         let args = spec
@@ -129,10 +148,6 @@ impl ServiceManager for LaunchDServiceManager {
 
         // Make the service target label
         let label = util::os_string_to_string(self.make_service_target(false))?;
-
-        if spec.restart_on_failure && !spec.autostart {
-            return Err(ServiceErrKind::RestartOnFailureRequiresAutostart.into_error());
-        }
 
         let restart = if spec.restart_on_failure {
             format!(

@@ -158,6 +158,14 @@ impl WinServiceManager {
 }
 
 impl ServiceManager for WinServiceManager {
+    fn fully_qualified_name(&self) -> Cow<'_, OsStr> {
+        self.instance_name()
+    }
+
+    fn is_user_service(&self) -> bool {
+        self.luid.is_some()
+    }
+
     fn install(&self, spec: &ServiceSpec) -> UniResult<(), ServiceErrKind> {
         let type_ = if self.luid.is_none() {
             "own"
@@ -183,23 +191,15 @@ impl ServiceManager for WinServiceManager {
             create_args.push(display_name);
         }
 
-        if let Some(user) = &spec.user {
-            // If we have a user... we must have a password
-            match &spec.password {
-                Some(password) => {
-                    create_args.push("obj=".as_ref());
-                    create_args.push(&user);
-                    create_args.push("password=".as_ref());
-                    create_args.push(&password);
-                }
-                None => {
-                    return Err(ServiceErrKind::UserRequiresPassword.into_error());
-                }
-            }
+        if let (Some(user), Some(password)) = (&spec.user, &spec.password) {
+            create_args.push("obj=".as_ref());
+            create_args.push(&user);
+            create_args.push("password=".as_ref());
+            create_args.push(&password);
         }
 
         self.sc("create", Some(&self.name), create_args)?;
-        if let Some(desc) = &spec.desc {
+        if let Some(desc) = &spec.description {
             self.sc("description", Some(&self.name), vec![desc])?;
         }
 
@@ -271,7 +271,10 @@ impl ServiceManager for WinServiceManager {
     fn capabilities(&self) -> ServiceCapabilities {
         ServiceCapabilities::CUSTOM_USER_REQUIRES_PASSWORD
             | ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON
-            | ServiceCapabilities::ELEVATED_PRIV_REQUIRED_FOR_USER_INSTALL
+            | ServiceCapabilities::USER_SERVICES_REQ_ELEVATED_PRIV_FOR_INSTALL
             | ServiceCapabilities::SUPPORTS_PENDING_PAUSED_STATES
+            | ServiceCapabilities::USER_SERVICE_NAME_IS_DYNAMIC
+            | ServiceCapabilities::SUPPORTS_DESCRIPTION
+            | ServiceCapabilities::SUPPORTS_DISPLAY_NAME
     }
 }
