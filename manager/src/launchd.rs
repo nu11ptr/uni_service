@@ -130,6 +130,25 @@ impl ServiceManager for LaunchDServiceManager {
         // Make the service target label
         let label = util::os_string_to_string(self.make_service_target(false))?;
 
+        let restart = if spec.restart_on_failure {
+            format!(
+                r#"        <key>KeepAlive</key>
+        <dict>
+            <key>SuccessfulExit</key>
+            <false/>
+            <key>Crash</key>
+            <true/>
+        </dict>
+"#
+            )
+        } else {
+            format!(
+                r#"        <key>KeepAlive</key>
+        <false/>
+"#,
+            )
+        };
+
         let run_at_load = if spec.autostart { "true" } else { "false" };
 
         let service = format!(
@@ -143,8 +162,7 @@ impl ServiceManager for LaunchDServiceManager {
         <array>
 {args}
         </array>
-        <key>KeepAlive</key>
-        <false/>
+{restart}
         <key>RunAtLoad</key>
         <{run_at_load}/>
     </dict>

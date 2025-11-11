@@ -70,6 +70,8 @@ pub struct ServiceSpec {
     pub desc: Option<OsString>,
     /// Whether the service should start automatically when the system boots or user logs in.
     pub autostart: bool,
+    /// Whether the service should be restarted if it fails.
+    pub restart_on_failure: bool,
 }
 
 impl ServiceSpec {
@@ -81,6 +83,7 @@ impl ServiceSpec {
             display_name: None,
             desc: None,
             autostart: false,
+            restart_on_failure: false,
         }
     }
 
@@ -105,6 +108,12 @@ impl ServiceSpec {
     /// Sets whether the service should start automatically when the system boots or user logs in.
     pub fn set_autostart(mut self) -> Self {
         self.autostart = true;
+        self
+    }
+
+    /// Sets whether the service should be restarted if it fails.
+    pub fn set_restart_on_failure(mut self) -> Self {
+        self.restart_on_failure = true;
         self
     }
 

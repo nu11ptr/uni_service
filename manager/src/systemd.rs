@@ -102,12 +102,19 @@ impl ServiceManager for SystemDServiceManager {
             None => String::new(),
         };
 
+        let restart = if spec.restart_on_failure {
+            "on-failure"
+        } else {
+            "no"
+        };
+
         let service = format!(
             r#"[Unit]
 {desc}
 [Service]
 ExecStart={args}
-Restart=always
+Restart={restart}
+RestartSec=2
 
 [Install]
 WantedBy={wanted_by}

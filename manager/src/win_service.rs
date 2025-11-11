@@ -188,6 +188,19 @@ impl ServiceManager for WinServiceManager {
             self.sc("description", Some(&self.name), vec![desc])?;
         }
 
+        if spec.restart_on_failure {
+            self.sc(
+                "failure",
+                Some(&self.name),
+                vec![
+                    "reset=",
+                    "0",
+                    "actions=",
+                    "restart/2000/restart/2000/restart/2000",
+                ],
+            )?;
+        }
+
         Ok(())
     }
 
