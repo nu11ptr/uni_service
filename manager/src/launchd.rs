@@ -251,7 +251,8 @@ impl ServiceManager for LaunchDServiceManager {
     }
 
     fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::SupportsCustomGroup
-            | ServiceCapabilities::RestartOnFailureRequiresAutostart
+        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
+            | ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART
+            | ServiceCapabilities::USES_NAME_PREFIX
     }
 }

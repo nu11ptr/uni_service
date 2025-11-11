@@ -269,7 +269,9 @@ impl ServiceManager for WinServiceManager {
     }
 
     fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::UserServicesRequireNewLogon
-            | ServiceCapabilities::CustomUserRequiresPassword
+        ServiceCapabilities::CUSTOM_USER_REQUIRES_PASSWORD
+            | ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON
+            | ServiceCapabilities::ELEVATED_PRIV_REQUIRED_FOR_USER_INSTALL
+            | ServiceCapabilities::SUPPORTS_PENDING_PAUSED_STATES
     }
 }

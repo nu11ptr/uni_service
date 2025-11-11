@@ -178,6 +178,6 @@ WantedBy={wanted_by}
     }
 
     fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::SupportsCustomGroup
+        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
     }
 }

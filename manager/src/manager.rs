@@ -195,13 +195,19 @@ bitflags! {
     /// The capabilities of a service manager.
     pub struct ServiceCapabilities: u32 {
         /// The service requires a password when a custom user is used.
-        const CustomUserRequiresPassword = 1 << 0;
-        /// The service supports running as with a custom group.
-        const SupportsCustomGroup = 1 << 1;
-        /// The user services require a new logon before they can be started.
-        const UserServicesRequireNewLogon = 1 << 2;
+        const CUSTOM_USER_REQUIRES_PASSWORD = 1 << 0;
+        /// The service supports running as a custom group.
+        const SUPPORTS_CUSTOM_GROUP = 1 << 1;
+        /// User services require a new logon before they can be started.
+        const USER_SERVICES_REQUIRE_NEW_LOGON = 1 << 2;
         /// The service requires autostart to be enabled when restarting on failure is enabled.
-        const RestartOnFailureRequiresAutostart = 1 << 3;
+        const RESTART_ON_FAILURE_REQUIRES_AUTOSTART = 1 << 3;
+        /// The service uses a name prefix.
+        const USES_NAME_PREFIX = 1 << 4;
+        /// User services require elevated privileges to be installed.
+        const ELEVATED_PRIV_REQUIRED_FOR_USER_INSTALL = 1 << 5;
+        /// The service supports pending and pause states.
+        const SUPPORTS_PENDING_PAUSED_STATES = 1 << 6;
     }
 }
 
