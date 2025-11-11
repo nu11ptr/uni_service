@@ -14,9 +14,8 @@ static TRACING: OnceLock<()> = OnceLock::new();
 fn init_tracing() {
     TRACING.get_or_init(|| {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::WARN)
             .with_target(false)
-            .with_test_writer() // ensures logs go to test output
             .init()
     });
 }
@@ -48,7 +47,6 @@ fn test_service_interactive() {
 fn test_service(name: &str, user: bool, test_execution: bool) {
     // Hardcoded so only one test supported at a time!
     const SERVER_ADDRESS: &str = "127.0.0.1:53165";
-    init_tracing();
 
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
@@ -115,6 +113,7 @@ fn test_service(name: &str, user: bool, test_execution: bool) {
 #[cfg(windows)]
 #[test]
 fn test_windows_user_service() {
+    init_tracing();
     test_service("user_test", true, false);
 }
 
@@ -122,6 +121,7 @@ fn test_windows_user_service() {
 #[cfg(windows)]
 #[test]
 fn test_windows_system_service() {
+    init_tracing();
     test_service("system_test", false, true);
 }
 
@@ -134,10 +134,11 @@ fn is_root() -> bool {
 #[cfg(not(windows))]
 #[test]
 fn test_unix_user_service() {
+    init_tracing();
     if !is_root() {
         test_service("user_test", true, true);
     } else {
-        eprintln!("Skipping 'test_unix_user_service' because not running as user")
+        tracing::warn!("Skipping 'test_unix_user_service' because not running as user");
     }
 }
 
@@ -145,9 +146,10 @@ fn test_unix_user_service() {
 #[cfg(not(windows))]
 #[test]
 fn test_unix_system_service() {
+    init_tracing();
     if is_root() {
         test_service("system_test", false, true);
     } else {
-        eprintln!("Skipping 'test_unix_system_service' because not running as root")
+        tracing::warn!("Skipping 'test_unix_system_service' because not running as root");
     }
 }
