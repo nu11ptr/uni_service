@@ -203,6 +203,15 @@ impl ServiceManager for WinServiceManager {
             self.sc("description", Some(&self.name), vec![desc])?;
         }
 
+        if self.luid.is_some() {
+            // Setup permissions for the service to allow the user to start/stop it
+            self.sc(
+                "sdset",
+                Some(&self.name),
+                vec!["D:(A;;GA;;;SU)(A;;GA;;;BA)".as_ref()],
+            )?;
+        }
+
         if spec.restart_on_failure {
             self.sc(
                 "failure",
