@@ -108,6 +108,15 @@ impl ServiceManager for SystemDServiceManager {
             "no"
         };
 
+        let user = match spec.user_string()? {
+            Some(user) => format!("User={user}\n"),
+            None => String::new(),
+        };
+        let group = match spec.group_string()? {
+            Some(group) => format!("Group={group}\n"),
+            None => String::new(),
+        };
+
         let service = format!(
             r#"[Unit]
 {desc}
@@ -115,7 +124,7 @@ impl ServiceManager for SystemDServiceManager {
 ExecStart={args}
 Restart={restart}
 RestartSec=2
-
+{user}{group}
 [Install]
 WantedBy={wanted_by}
 "#

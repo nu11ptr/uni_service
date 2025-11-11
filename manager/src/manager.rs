@@ -15,6 +15,7 @@ use uni_error::{ErrorContext as _, UniKind, UniResult};
 use crate::launchd::make_service_manager;
 #[cfg(target_os = "linux")]
 use crate::systemd::make_service_manager;
+#[cfg(not(target_os = "windows"))]
 use crate::util;
 #[cfg(windows)]
 use crate::win_service::make_service_manager;
@@ -72,6 +73,12 @@ pub struct ServiceSpec {
     pub autostart: bool,
     /// Whether the service should be restarted if it fails.
     pub restart_on_failure: bool,
+    /// User to run the service as.
+    pub user: Option<OsString>,
+    /// Password to use for the user.
+    pub password: Option<OsString>,
+    /// Group to run the service as.
+    pub group: Option<OsString>,
 }
 
 impl ServiceSpec {
@@ -84,6 +91,9 @@ impl ServiceSpec {
             desc: None,
             autostart: false,
             restart_on_failure: false,
+            user: None,
+            password: None,
+            group: None,
         }
     }
 
@@ -117,8 +127,25 @@ impl ServiceSpec {
         self
     }
 
-    /// Returns the path to the executable and the arguments as a vector of `OsStr`s.
-    pub fn path_and_args(&self) -> Vec<&OsStr> {
+    /// Sets the user to run the service as.
+    pub fn set_user(mut self, user: impl Into<OsString>) -> Self {
+        self.user = Some(user.into());
+        self
+    }
+
+    /// Sets the password to use for the user.
+    pub fn set_password(mut self, password: impl Into<OsString>) -> Self {
+        self.password = Some(password.into());
+        self
+    }
+
+    /// Sets the group to run the service as.
+    pub fn set_group(mut self, group: impl Into<OsString>) -> Self {
+        self.group = Some(group.into());
+        self
+    }
+
+    pub(crate) fn path_and_args(&self) -> Vec<&OsStr> {
         let mut result = vec![self.path.as_ref()];
         let args = self
             .args
@@ -128,9 +155,8 @@ impl ServiceSpec {
         result
     }
 
-    /// Returns the path to the executable and the arguments as a vector of strings.
-    /// It returns an error if the path to the executable or the arguments are not valid UTF-8.
-    pub fn path_and_args_string(&self) -> UniResult<Vec<String>, ServiceErrKind> {
+    #[cfg(not(target_os = "windows"))]
+    pub(crate) fn path_and_args_string(&self) -> UniResult<Vec<String>, ServiceErrKind> {
         let combined = self.path_and_args();
         combined
             .iter()
@@ -138,21 +164,27 @@ impl ServiceSpec {
             .collect()
     }
 
-    /// Returns the display name of the service as a string. It returns an error if the display
-    /// name is not valid UTF-8.
-    pub fn display_name_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
-        self.display_name
-            .as_ref()
-            .map(|name| util::os_string_to_string(name))
-            .transpose()
-    }
-
-    /// Returns the description of the service as a string. It returns an error if the description
-    /// is not valid UTF-8.
-    pub fn desc_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn desc_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
         self.desc
             .as_ref()
             .map(|desc| util::os_string_to_string(desc))
+            .transpose()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub(crate) fn user_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+        self.user
+            .as_ref()
+            .map(|user| util::os_string_to_string(user))
+            .transpose()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub(crate) fn group_string(&self) -> UniResult<Option<String>, ServiceErrKind> {
+        self.group
+            .as_ref()
+            .map(|group| util::os_string_to_string(group))
             .transpose()
     }
 }
@@ -213,6 +245,8 @@ pub enum ServiceErrKind {
     AccessDenied,
     /// The operation failed because a directory was not found.
     DirectoryNotFound,
+    /// The operation failed because a user was specified without a password.
+    UserRequiresPassword,
     /// The operation failed because of an I/O error.
     IoError,
     /// The operation failed because of a platform-specific error.
@@ -252,6 +286,9 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::ServicePathNotFound => "The service path was not found".into(),
             ServiceErrKind::AccessDenied => "Access denied".into(),
             ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
+            ServiceErrKind::UserRequiresPassword => {
+                "A user was specified without a password".into()
+            }
             ServiceErrKind::IoError => "An I/O error occurred".into(),
             ServiceErrKind::PlatformError(code) => {
                 format!("A platform-specific error occurred. Code: {:?}", code).into()

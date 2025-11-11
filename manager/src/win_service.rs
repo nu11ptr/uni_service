@@ -183,6 +183,21 @@ impl ServiceManager for WinServiceManager {
             create_args.push(display_name);
         }
 
+        if let Some(user) = &spec.user {
+            // If we have a user... we must have a password
+            match &spec.password {
+                Some(password) => {
+                    create_args.push("obj=".as_ref());
+                    create_args.push(&user);
+                    create_args.push("password=".as_ref());
+                    create_args.push(&password);
+                }
+                None => {
+                    return Err(ServiceErrKind::UserRequiresPassword.into_error());
+                }
+            }
+        }
+
         self.sc("create", Some(&self.name), create_args)?;
         if let Some(desc) = &spec.desc {
             self.sc("description", Some(&self.name), vec![desc])?;

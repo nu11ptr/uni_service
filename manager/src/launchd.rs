@@ -151,6 +151,17 @@ impl ServiceManager for LaunchDServiceManager {
 
         let run_at_load = if spec.autostart { "true" } else { "false" };
 
+        let user = match spec.user_string()? {
+            Some(user) => format!("        <key>UserName</key>\n        <string>{user}</string>\n"),
+            None => String::new(),
+        };
+        let group = match spec.group_string()? {
+            Some(group) => {
+                format!("        <key>GroupName</key>\n        <string>{group}</string>\n")
+            }
+            None => String::new(),
+        };
+
         let service = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -162,6 +173,7 @@ impl ServiceManager for LaunchDServiceManager {
         <array>
 {args}
         </array>
+{user}{group}
 {restart}
         <key>RunAtLoad</key>
         <{run_at_load}/>
