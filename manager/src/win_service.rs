@@ -193,10 +193,10 @@ impl ServiceManager for WinServiceManager {
                 "failure",
                 Some(&self.name),
                 vec![
-                    "reset=",
-                    "0",
-                    "actions=",
-                    "restart/2000/restart/2000/restart/2000",
+                    "reset=".as_ref(),
+                    "0".as_ref(),
+                    "actions=".as_ref(),
+                    "restart/2000/restart/2000/restart/2000".as_ref(),
                 ],
             )?;
         }
