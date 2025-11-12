@@ -9,6 +9,7 @@ use crate::manager::{
 };
 
 const SC_EXE: &str = "sc.exe";
+const WHOAMI_EXE: &str = "whoami.exe";
 
 pub(crate) fn make_service_manager(
     name: OsString,
@@ -94,6 +95,57 @@ impl WinServiceManager {
         } else {
             let msg = String::from_utf8(output.stderr).kind(ServiceErrKind::BadUtf8)?;
             Err(ServiceErrKind::BadExitStatus(output.status.code(), msg).into_error())
+        }
+    }
+
+    fn whoami(&self) -> UniResult<String, ServiceErrKind> {
+        let mut command = Command::new(WHOAMI_EXE);
+
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        command.arg("/user").arg("/fo").arg("csv");
+
+        tracing::debug!("Executing command: {:?}", command);
+        let output = command.output().kind(ServiceErrKind::IoError)?;
+        if output.status.success() {
+            Ok(String::from_utf8(output.stdout).kind(ServiceErrKind::BadUtf8)?)
+        } else {
+            let msg = String::from_utf8(output.stderr).kind(ServiceErrKind::BadUtf8)?;
+            Err(ServiceErrKind::BadExitStatus(output.status.code(), msg).into_error())
+        }
+    }
+
+    fn extract_user_sid(&self) -> UniResult<String, ServiceErrKind> {
+        let output = self.whoami()?;
+
+        let quoted_sid = output
+            .lines()
+            .last()
+            .map(|line| line.split(',').last())
+            .ok_or_else(|| {
+                UniError::from_kind_context(
+                    ServiceErrKind::BadSid,
+                    "Could not find SID in whoami output",
+                )
+            })?;
+
+        tracing::debug!("Quoted SID: {quoted_sid:?}");
+
+        match quoted_sid {
+            Some(sid) if sid.starts_with("\"S-") && sid.ends_with('"') => {
+                Ok(sid[1..sid.len() - 1].to_string())
+            }
+            Some(_) => Err(UniError::from_kind_context(
+                ServiceErrKind::BadSid,
+                "SID is not in the expected format",
+            )),
+            None => Err(UniError::from_kind_context(
+                ServiceErrKind::BadSid,
+                "Could not find SID in whoami output",
+            )),
         }
     }
 
@@ -204,12 +256,14 @@ impl ServiceManager for WinServiceManager {
         }
 
         if self.luid.is_some() {
-            // Setup permissions for the service to allow the user to start/stop it
-            self.sc(
-                "sdset",
-                Some(&self.name),
-                vec!["D:(A;;GA;;;SU)(A;;GA;;;BA)".as_ref()],
-            )?;
+            // Setup permissions for the service to allow the user to start/stop/uninstall it
+            // Random users, Service Users:: mostly "read only" + interrogate service
+            // Our user, built-in admins, local system: full control
+            let sid = self.extract_user_sid()?;
+            let sd = format!(
+                "D:(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;{sid})"
+            );
+            self.sc("sdset", Some(&self.name), vec![sd.as_ref()])?;
         }
 
         if spec.restart_on_failure {

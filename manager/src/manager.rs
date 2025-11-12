@@ -285,6 +285,8 @@ pub enum ServiceErrKind {
     BadServiceSpec,
     /// The operation failed because of an I/O error.
     IoError,
+    /// The operation failed because the SID could not be extracted.
+    BadSid,
     /// The operation failed because of a platform-specific error.
     PlatformError(Option<i64>),
 
@@ -325,6 +327,7 @@ impl UniKind for ServiceErrKind {
             ServiceErrKind::DirectoryNotFound => "Unable to locate the directory".into(),
             ServiceErrKind::BadServiceSpec => "The service specification is invalid".into(),
             ServiceErrKind::IoError => "An I/O error occurred".into(),
+            ServiceErrKind::BadSid => "The SID could not be extracted".into(),
             ServiceErrKind::PlatformError(code) => {
                 format!("A platform-specific error occurred. Code: {:?}", code).into()
             }
