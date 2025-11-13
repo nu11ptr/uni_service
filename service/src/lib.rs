@@ -1,7 +1,10 @@
 //! Universal service crate for building cross platform OS services
 
+mod base;
 #[cfg(windows)]
 mod win_service;
+
+pub use base::BaseService;
 
 use std::sync::mpsc::channel;
 
