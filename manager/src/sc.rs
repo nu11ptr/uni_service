@@ -19,6 +19,16 @@ pub(crate) fn make_service_manager(
     WinServiceManager::new(name, user).map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
+pub fn capabilities() -> ServiceCapabilities {
+    ServiceCapabilities::CUSTOM_USER_REQUIRES_PASSWORD
+        | ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON
+        | ServiceCapabilities::USER_SERVICES_REQ_ELEVATED_PRIV_FOR_INSTALL
+        | ServiceCapabilities::SUPPORTS_PENDING_PAUSED_STATES
+        | ServiceCapabilities::USER_SERVICE_NAME_IS_DYNAMIC
+        | ServiceCapabilities::SUPPORTS_DESCRIPTION
+        | ServiceCapabilities::SUPPORTS_DISPLAY_NAME
+}
+
 // *** WinServiceManager ***
 
 struct WinServiceManager {
@@ -320,15 +330,5 @@ impl ServiceManager for WinServiceManager {
             (Some(_), ServiceStatus::NotInstalled) => self.raw_status(self.name.as_ref()),
             (_, status) => Ok(status),
         }
-    }
-
-    fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::CUSTOM_USER_REQUIRES_PASSWORD
-            | ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON
-            | ServiceCapabilities::USER_SERVICES_REQ_ELEVATED_PRIV_FOR_INSTALL
-            | ServiceCapabilities::SUPPORTS_PENDING_PAUSED_STATES
-            | ServiceCapabilities::USER_SERVICE_NAME_IS_DYNAMIC
-            | ServiceCapabilities::SUPPORTS_DESCRIPTION
-            | ServiceCapabilities::SUPPORTS_DISPLAY_NAME
     }
 }

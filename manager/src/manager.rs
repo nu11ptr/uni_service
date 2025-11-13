@@ -9,6 +9,13 @@ use std::{
 use bitflags::bitflags;
 use uni_error::{ErrorContext as _, UniError, UniKind, UniResult};
 
+#[cfg(target_os = "macos")]
+use crate::launchd::capabilities;
+#[cfg(windows)]
+use crate::sc::capabilities;
+#[cfg(target_os = "linux")]
+use crate::systemd::capabilities;
+
 // *** make_service_manager ***
 
 #[cfg(target_os = "macos")]
@@ -249,8 +256,6 @@ pub(crate) trait ServiceManager {
     fn stop(&self) -> UniResult<(), ServiceErrKind>;
 
     fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind>;
-
-    fn capabilities(&self) -> ServiceCapabilities;
 }
 
 /// The error type for service management operations.
@@ -366,6 +371,11 @@ impl UniServiceManager {
         make_service_manager(name, prefix.into(), user).map(|manager| Self { manager })
     }
 
+    /// Gets the capabilities of the underlying platform service manager.
+    pub fn capabilities() -> ServiceCapabilities {
+        capabilities()
+    }
+
     /// Gets the fully qualified name of the service. Note that Windows user services have a dynamic name that changes between sessions.
     pub fn fully_qualified_name(&self) -> Cow<'_, OsStr> {
         self.manager.fully_qualified_name()
@@ -393,7 +403,7 @@ impl UniServiceManager {
                     ));
                 }
 
-                let capabilities = self.capabilities();
+                let capabilities = capabilities();
 
                 if capabilities.contains(ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART)
                     && spec.restart_on_failure
@@ -468,11 +478,6 @@ impl UniServiceManager {
     /// or if the status cannot be determined.
     pub fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
         self.manager.status()
-    }
-
-    /// Gets the capabilities of the service manager.
-    pub fn capabilities(&self) -> ServiceCapabilities {
-        self.manager.capabilities()
     }
 
     /// Waits for the service to reach the desired status. It returns an error if the service is not installed

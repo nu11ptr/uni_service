@@ -32,6 +32,12 @@ pub(crate) fn make_service_manager(
         .map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
+pub fn capabilities() -> ServiceCapabilities {
+    ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
+        | ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART
+        | ServiceCapabilities::USES_NAME_PREFIX
+}
+
 struct LaunchDServiceManager {
     name: OsString,
     prefix: OsString,
@@ -263,11 +269,5 @@ impl ServiceManager for LaunchDServiceManager {
                 _ => Err(e),
             },
         }
-    }
-
-    fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
-            | ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART
-            | ServiceCapabilities::USES_NAME_PREFIX
     }
 }

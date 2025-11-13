@@ -22,6 +22,10 @@ pub(crate) fn make_service_manager(
     SystemDServiceManager::new(name, user).map(|mgr| Box::new(mgr) as Box<dyn ServiceManager>)
 }
 
+pub fn capabilities() -> ServiceCapabilities {
+    ServiceCapabilities::SUPPORTS_CUSTOM_GROUP | ServiceCapabilities::SUPPORTS_DESCRIPTION
+}
+
 struct SystemDServiceManager {
     name: OsString,
     user: bool,
@@ -184,9 +188,5 @@ WantedBy={wanted_by}
             }
             Err(err) => Err(err),
         }
-    }
-
-    fn capabilities(&self) -> ServiceCapabilities {
-        ServiceCapabilities::SUPPORTS_CUSTOM_GROUP | ServiceCapabilities::SUPPORTS_DESCRIPTION
     }
 }
