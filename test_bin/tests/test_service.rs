@@ -44,14 +44,36 @@ fn test_service_interactive() {
     command.wait().unwrap();
 }
 
-fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase: bool) {
+#[derive(Clone, Copy)]
+enum MultiPhase {
+    NotMultiPhase,
+    ExpectingEitherPhase,
+    ExpectingPhase2,
+}
+
+impl MultiPhase {
+    fn is_multi_phase(self) -> bool {
+        matches!(
+            self,
+            MultiPhase::ExpectingEitherPhase | MultiPhase::ExpectingPhase2
+        )
+    }
+}
+
+fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase: MultiPhase) {
     // Cargo sets this env var to the path of the built executable
     let bin_path = env!("CARGO_BIN_EXE_test_bin");
 
     let manager = UniServiceManager::new(name, "org.test.", user).unwrap();
-    let installed = match manager.status().unwrap() {
-        ServiceStatus::NotInstalled => false,
-        _ if multi_phase => true,
+    let installed = match (manager.status().unwrap(), multi_phase) {
+        (ServiceStatus::NotInstalled, MultiPhase::ExpectingPhase2) => {
+            tracing::warn!(
+                "MULTI_PHASE_1: Skipping multi-phase test because not running as administrator"
+            );
+            return;
+        }
+        (ServiceStatus::NotInstalled, _) => false,
+        _ if multi_phase.is_multi_phase() => true,
         _ => panic!("Service is already installed"),
     };
 
@@ -62,7 +84,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
             .contains(ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON);
 
     if !installed {
-        if multi_phase {
+        if multi_phase.is_multi_phase() {
             tracing::warn!(
                 "MULTI_PHASE_1: Installing service only, execution deferred until after next logon"
             );
@@ -90,7 +112,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
         .unwrap();
 
     if ready_to_start {
-        if multi_phase {
+        if multi_phase.is_multi_phase() {
             tracing::warn!("MULTI_PHASE_2: Executing service");
         }
 
@@ -120,7 +142,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
         handle.join().unwrap();
         // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
     } else {
-        if multi_phase {
+        if multi_phase.is_multi_phase() {
             tracing::warn!("MULTI_PHASE_1: Service execution deferred until after next logon");
         } else {
             tracing::warn!(
@@ -129,12 +151,26 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
         }
     }
 
-    if !multi_phase || installed {
+    if !multi_phase.is_multi_phase() || installed {
         manager.uninstall().unwrap();
         manager
             .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
             .unwrap();
     }
+}
+
+#[cfg(windows)]
+fn is_admin() -> bool {
+    use std::process::Stdio;
+
+    let output = Command::new("net")
+        .arg("session")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .unwrap();
+    output.status.success()
 }
 
 // Requires administrator privileges to install/uninstall, and can only be started/stopped on logon/logoff
@@ -144,7 +180,12 @@ fn test_windows_user_service() {
     init_tracing();
 
     if std::env::var("MULTI_PHASE").is_err() {
-        test_service("user_test", "127.0.0.1:53165", true, false);
+        test_service(
+            "user_test",
+            "127.0.0.1:53165",
+            true,
+            MultiPhase::NotMultiPhase,
+        );
     } else {
         tracing::warn!(
             "Skipping 'test_windows_user_service' because 'MULTI_PHASE' environment variable is set"
@@ -152,14 +193,24 @@ fn test_windows_user_service() {
     }
 }
 
-// Requires administrator privileges to install/uninstall, and can only be started/stopped on logon/logoff
+// Requires administrator privileges to install, and can only be started/stopped after logon/logoff
+// (at which point our user can start/stop/uninstall)
 #[cfg(windows)]
 #[test]
 fn test_windows_user_service_multi_phase() {
     init_tracing();
 
     if std::env::var("MULTI_PHASE").is_ok() {
-        test_service("user_test_multi_phase", "127.0.0.1:53165", true, true);
+        let multi_phase = match is_admin() {
+            true => MultiPhase::ExpectingEitherPhase,
+            false => MultiPhase::ExpectingPhase2,
+        };
+        test_service(
+            "user_test_multi_phase",
+            "127.0.0.1:53165",
+            true,
+            multi_phase,
+        );
     } else {
         tracing::warn!(
             "Skipping 'test_windows_user_service_multi_phase' because 'MULTI_PHASE' environment variable is not set"
@@ -172,7 +223,19 @@ fn test_windows_user_service_multi_phase() {
 #[test]
 fn test_windows_system_service() {
     init_tracing();
-    test_service("system_test", "127.0.0.1:53166", false, false);
+
+    if is_admin() {
+        test_service(
+            "system_test",
+            "127.0.0.1:53166",
+            false,
+            MultiPhase::NotMultiPhase,
+        );
+    } else {
+        tracing::warn!(
+            "Skipping 'test_windows_system_service' because not running as administrator"
+        );
+    }
 }
 
 #[cfg(not(windows))]
@@ -186,7 +249,12 @@ fn is_root() -> bool {
 fn test_unix_user_service() {
     init_tracing();
     if !is_root() {
-        test_service("user_test", "127.0.0.1:53165", true, false);
+        test_service(
+            "user_test",
+            "127.0.0.1:53165",
+            true,
+            MultiPhase::NotMultiPhase,
+        );
     } else {
         tracing::warn!("Skipping 'test_unix_user_service' because not running as user");
     }
@@ -198,7 +266,12 @@ fn test_unix_user_service() {
 fn test_unix_system_service() {
     init_tracing();
     if is_root() {
-        test_service("system_test", "127.0.0.1:53166", false, false);
+        test_service(
+            "system_test",
+            "127.0.0.1:53166",
+            false,
+            MultiPhase::NotMultiPhase,
+        );
     } else {
         tracing::warn!("Skipping 'test_unix_system_service' because not running as root");
     }
