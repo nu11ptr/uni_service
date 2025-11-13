@@ -47,7 +47,9 @@ fn test_service_interactive() {
 #[derive(Clone, Copy)]
 enum MultiPhase {
     NotMultiPhase,
+    #[allow(dead_code)]
     ExpectingEitherPhase,
+    #[allow(dead_code)]
     ExpectingPhase2,
 }
 
