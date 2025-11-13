@@ -19,7 +19,7 @@ impl AxumServer {
         }
     }
 
-    #[tokio::main]
+    #[tokio::main(flavor = "current_thread")]
     async fn run_server(&mut self) -> uni_service::Result<()> {
         let app = Router::new()
             .route("/", get(Self::root))
@@ -44,7 +44,10 @@ impl AxumServer {
     }
 
     async fn wait_for_shutdown(receiver: Receiver<()>) {
-        receiver.recv().expect("Could not receive shutdown signal");
+        tokio::task::spawn_blocking(move || receiver.recv())
+            .await
+            .expect("Error executing spawned blocking task")
+            .expect("Could not receive shutdown signal");
         println!("Shutdown signal received. Shutting down...");
     }
 }
