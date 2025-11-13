@@ -18,3 +18,7 @@ ctrlc.workspace = true
 tracing.workspace = true
 uni_error.workspace = true
 windows-service.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio.workspace = true

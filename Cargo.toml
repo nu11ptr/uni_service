@@ -6,12 +6,17 @@ members = ["manager", "service", "test_bin"]
 uni_service = { path = "service" }
 uni_service_manager = { path = "manager" }
 
+axum = { version = "0.8", features = [
+    "http1",
+    "tokio",
+], default-features = false }
 bitflags = "2"
 ctrlc = { version = "3", features = ["termination"] }
 dirs = "6"
 libc = "0.2"
 polling = "3"
 send_ctrlc = "0.5"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1", features = ["std"], default-features = false }
 tracing-subscriber = { version = "0.3", features = [
     "fmt",
