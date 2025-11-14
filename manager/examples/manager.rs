@@ -1,7 +1,7 @@
 use std::{env, io, process};
 use std::{io::Write as _, time::Duration};
 
-use uni_service_manager::{ServiceCapabilities, ServiceSpec, ServiceStatus, UniServiceManager};
+use uni_service_manager::{ServiceCapabilities, ServiceSpec, UniServiceManager};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -33,13 +33,11 @@ fn run(
         .description(description)?;
 
     print!("Installing service '{service_name}'...",);
-    user_manager.install(&spec)?;
-    user_manager.wait_for_status(ServiceStatus::Stopped, TIMEOUT)?;
+    user_manager.install_and_wait(&spec, TIMEOUT)?;
     println!("done");
 
     print!("Starting service '{service_name}'...");
-    user_manager.start()?;
-    user_manager.wait_for_status(ServiceStatus::Running, TIMEOUT)?;
+    user_manager.start_and_wait(TIMEOUT)?;
     println!("done");
 
     io::stdout().flush()?;
@@ -48,13 +46,11 @@ fn run(
     io::stdin().read_line(&mut buffer)?;
 
     print!("Stopping service '{service_name}'...");
-    user_manager.stop()?;
-    user_manager.wait_for_status(ServiceStatus::Stopped, TIMEOUT)?;
+    user_manager.stop_and_wait(TIMEOUT)?;
     println!("done");
 
     print!("Uninstalling service '{service_name}'...");
-    user_manager.uninstall()?;
-    user_manager.wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)?;
+    user_manager.uninstall_and_wait(TIMEOUT)?;
     println!("done");
 
     Ok(())

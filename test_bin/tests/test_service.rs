@@ -136,10 +136,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
             server.expect_message("stopping", TIMEOUT).unwrap();
             server.expect_message("quitting", TIMEOUT).unwrap();
         });
-        manager.stop().unwrap();
-        manager
-            .wait_for_status(ServiceStatus::Stopped, TIMEOUT)
-            .unwrap();
+        manager.stop_and_wait(TIMEOUT).unwrap();
         handle.join().unwrap();
         // NOTE: It is not possible to get the goodbye message because the service is stopped before the message is sent
     } else {
@@ -153,10 +150,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
     }
 
     if !multi_phase.is_multi_phase() || installed {
-        manager.uninstall().unwrap();
-        manager
-            .wait_for_status(ServiceStatus::NotInstalled, TIMEOUT)
-            .unwrap();
+        manager.uninstall_and_wait(TIMEOUT).unwrap();
     }
 }
 

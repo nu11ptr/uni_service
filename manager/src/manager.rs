@@ -405,7 +405,7 @@ impl UniServiceManager {
                     ));
                 }
 
-                let capabilities = capabilities();
+                let capabilities = Self::capabilities();
 
                 if capabilities.contains(ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART)
                     && spec.restart_on_failure
@@ -443,6 +443,47 @@ impl UniServiceManager {
         }
     }
 
+    /// Installs the service and waits for it to reach the expected status. The `timeout` is the maximum time
+    /// to wait for the service to reach that status. The expected status is `Running` if autostart is enabled and the
+    /// service starts immediately after install, otherwise `Stopped`. The current status is returned when successful.
+    pub fn install_and_wait(
+        &self,
+        spec: &ServiceSpec,
+        timeout: Duration,
+    ) -> UniResult<ServiceStatus, ServiceErrKind> {
+        self.install(spec)?;
+
+        let status = if spec.autostart
+            && Self::capabilities().contains(ServiceCapabilities::STARTS_IMMEDIATELY_WITH_AUTOSTART)
+        {
+            ServiceStatus::Running
+        } else {
+            ServiceStatus::Stopped
+        };
+
+        self.wait_for_status(status, timeout)?;
+        Ok(status)
+    }
+
+    /// Installs the service if it is not already installed and starts it. The `timeout` is the maximum time
+    /// to wait for the service to reach the expected status. The expected status is `Running` if autostart is enabled and the
+    /// service starts immediately after install, otherwise `Stopped`. The current status is returned when successful.
+    pub fn install_if_needed_and_start(
+        &self,
+        spec: &ServiceSpec,
+        timeout: Duration,
+    ) -> UniResult<(), ServiceErrKind> {
+        match self.install_and_wait(spec, timeout) {
+            // Wasn't installed, but now it is
+            Ok(_) => self.start_and_wait(timeout),
+            // Already installed
+            Err(err) if matches!(err.kind_ref(), ServiceErrKind::AlreadyInstalled) => {
+                self.start_and_wait(timeout)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Uninstalls the service. After the method returns successfully, the service may or may not be uninstalled yet,
     /// as this is platform-dependent. An error is returned if the service is not installed, if the service
     /// is not stopped, or if the uninstallation fails.
@@ -450,6 +491,32 @@ impl UniServiceManager {
         match self.status() {
             Ok(ServiceStatus::Stopped) => self.manager.uninstall(),
             Ok(status) => Err(ServiceErrKind::WrongState(status).into_error()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Uninstalls the service and waits for it to reach the expected status of `NotInstalled`.
+    /// The `timeout` is the maximum time to wait for the service to reach that status.
+    pub fn uninstall_and_wait(&self, timeout: Duration) -> UniResult<(), ServiceErrKind> {
+        self.uninstall()?;
+        self.wait_for_status(ServiceStatus::NotInstalled, timeout)
+    }
+
+    /// Stops the service if it is running and uninstalls it. If the service is already stopped, it will be uninstalled
+    /// without further action. The `timeout` is the maximum time to wait for the service to reach each expected status.
+    pub fn stop_if_needed_and_uninstall(&self, timeout: Duration) -> UniResult<(), ServiceErrKind> {
+        match self.stop_and_wait(timeout) {
+            // Stopped
+            Ok(_) => self.uninstall_and_wait(timeout),
+            // Already stopped
+            Err(err)
+                if matches!(
+                    err.kind_ref(),
+                    ServiceErrKind::WrongState(ServiceStatus::Stopped)
+                ) =>
+            {
+                self.uninstall_and_wait(timeout)
+            }
             Err(e) => Err(e),
         }
     }
@@ -465,6 +532,13 @@ impl UniServiceManager {
         }
     }
 
+    /// Starts the service and waits for it to reach the expected status of `Running`.
+    /// The `timeout` is the maximum time to wait for the service to reach that status.
+    pub fn start_and_wait(&self, timeout: Duration) -> UniResult<(), ServiceErrKind> {
+        self.start()?;
+        self.wait_for_status(ServiceStatus::Running, timeout)
+    }
+
     /// Stops the service. After the method returns successfully, the service may or may not be stopped yet,
     /// as this is platform-dependent. An error is returned if the service is not running or if the stopping
     /// fails.
@@ -474,6 +548,13 @@ impl UniServiceManager {
             Ok(status) => Err(ServiceErrKind::WrongState(status).into_error()),
             Err(e) => Err(e),
         }
+    }
+
+    /// Stops the service and waits for it to reach the expected status of `Stopped`.
+    /// The `timeout` is the maximum time to wait for the service to reach that status.
+    pub fn stop_and_wait(&self, timeout: Duration) -> UniResult<(), ServiceErrKind> {
+        self.stop()?;
+        self.wait_for_status(ServiceStatus::Stopped, timeout)
     }
 
     /// Gets the current status of the service. It returns an error if the service is not installed
