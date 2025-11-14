@@ -1,7 +1,5 @@
-use std::sync::mpsc::Receiver;
-
 use axum::{Router, extract::State, routing::get};
-
+use tokio::sync::mpsc::Receiver;
 use uni_service::{BaseService, run_service};
 
 // *** AxumServer ***
@@ -43,10 +41,10 @@ impl AxumServer {
         }
     }
 
-    async fn wait_for_shutdown(receiver: Receiver<()>) {
-        tokio::task::spawn_blocking(move || receiver.recv())
+    async fn wait_for_shutdown(mut receiver: Receiver<()>) {
+        receiver
+            .recv()
             .await
-            .expect("Error executing spawned blocking task")
             .expect("Could not receive shutdown signal");
         println!("Shutdown signal received. Shutting down...");
     }
@@ -64,7 +62,7 @@ fn run() -> uni_service::Result<()> {
         let mut server = AxumServer::new(shutdown, is_service);
         server.run_server()
     };
-    let service = BaseService::new("axum_service", axum_service, service_mode);
+    let service = BaseService::new_tokio("axum_service", axum_service, service_mode);
     run_service(service, service_mode)?;
     Ok(())
 }

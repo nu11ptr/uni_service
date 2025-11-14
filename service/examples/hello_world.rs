@@ -18,7 +18,7 @@ fn run() -> uni_service::Result<()> {
         Some("service") => true,
         _ => false,
     };
-    let service = BaseService::new("hello_world", hello_service, service_mode);
+    let service = BaseService::new_sync("hello_world", hello_service, service_mode);
 
     run_service(service, service_mode)?;
     Ok(())
