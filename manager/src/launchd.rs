@@ -36,6 +36,7 @@ pub fn capabilities() -> ServiceCapabilities {
     ServiceCapabilities::SUPPORTS_CUSTOM_GROUP
         | ServiceCapabilities::RESTART_ON_FAILURE_REQUIRES_AUTOSTART
         | ServiceCapabilities::USES_NAME_PREFIX
+        | ServiceCapabilities::STARTS_IMMEDIATELY_WITH_AUTOSTART
 }
 
 struct LaunchDServiceManager {

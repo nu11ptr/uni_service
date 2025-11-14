@@ -215,7 +215,7 @@ impl ServiceSpec {
 // *** Service Capabilities ***
 
 bitflags! {
-    /// The capabilities of a service manager.
+    /// The capabilities and limitations of the underlying platform service manager.
     pub struct ServiceCapabilities: u32 {
         /// The service requires a password when a custom user is used.
         const CUSTOM_USER_REQUIRES_PASSWORD = 1 << 0;
@@ -237,6 +237,8 @@ bitflags! {
         const SUPPORTS_DESCRIPTION = 1 << 8;
         /// The service supports a custom display name.
         const SUPPORTS_DISPLAY_NAME = 1 << 9;
+        /// The service starts immediately after install when autostart is enabled.
+        const STARTS_IMMEDIATELY_WITH_AUTOSTART = 1 << 10;
     }
 }
 
