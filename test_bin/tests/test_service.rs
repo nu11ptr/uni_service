@@ -81,8 +81,7 @@ fn test_service(name: &str, bind_address: &'static str, user: bool, multi_phase:
 
     let ready_to_start = installed
         || !user
-        || !manager
-            .capabilities()
+        || !UniServiceManager::capabilities()
             .contains(ServiceCapabilities::USER_SERVICES_REQUIRE_NEW_LOGON);
 
     if !installed {
