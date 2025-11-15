@@ -22,7 +22,7 @@ tracing-subscriber = { version = "0.3", features = [
     "fmt",
     "std",
 ], default-features = false }
-uni_error = "0.4"
+uni_error = "0.5"
 windows-service = "0.8"
 
 [package]
