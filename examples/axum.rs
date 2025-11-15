@@ -26,7 +26,7 @@ impl AxumServer {
         let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
         let receiver = std::mem::take(&mut self.shutdown).ok_or("Receiver not found")?;
 
-        println!("Serving on port 8000...");
+        tracing::info!("Serving on port 8000...");
         axum::serve(listener, app)
             .with_graceful_shutdown(Self::wait_for_shutdown(receiver))
             .await?;
@@ -46,7 +46,7 @@ impl AxumServer {
             .recv()
             .await
             .expect("Could not receive shutdown signal");
-        println!("Shutdown signal received. Shutting down...");
+        tracing::info!("Shutdown signal received. Shutting down...");
     }
 }
 
@@ -68,8 +68,10 @@ fn run() -> uni_service::Result<()> {
 }
 
 fn main() {
+    tracing_subscriber::fmt().with_target(false).init();
+
     if let Err(e) = run() {
-        eprintln!("Error: {}", e);
+        tracing::error!("Error: {}", e);
         std::process::exit(1);
     }
 }

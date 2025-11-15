@@ -87,7 +87,7 @@ where
     }
 
     fn start(&mut self) -> Result<()> {
-        println!("Starting service '{}'...", self.name);
+        tracing::info!("Starting service '{}'...", self.name);
 
         let receiver = mem::take(&mut self.receiver).ok_or("Receiver not found")?;
         let is_service = self.is_service;
@@ -98,7 +98,7 @@ where
     }
 
     fn stop(&mut self) -> Result<()> {
-        println!("Stopping service '{}'...", self.name);
+        tracing::info!("Stopping service '{}'...", self.name);
 
         (self.sender_fn)()?;
 
@@ -107,7 +107,7 @@ where
             handle.join().map_err(|_| "Error joining thread")??;
         }
 
-        println!("Service '{}' is shut down.", self.name);
+        tracing::info!("Service '{}' is shut down.", self.name);
         Ok(())
     }
 }

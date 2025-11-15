@@ -4,12 +4,12 @@ use uni_service::{BaseService, run_service};
 
 fn hello_service(shutdown: Receiver<()>, is_service: bool) -> uni_service::Result<()> {
     if is_service {
-        println!("Hello, World! (service mode)");
+        tracing::info!("Hello, World! (service mode)");
     } else {
-        println!("Hello, World! (interactive mode)");
+        tracing::info!("Hello, World! (interactive mode)");
     }
     shutdown.recv()?;
-    println!("Shutdown signal received. Shutting down...");
+    tracing::info!("Shutdown signal received. Shutting down...");
     Ok(())
 }
 
@@ -25,8 +25,10 @@ fn run() -> uni_service::Result<()> {
 }
 
 fn main() {
+    tracing_subscriber::fmt().with_target(false).init();
+
     if let Err(e) = run() {
-        eprintln!("Error: {}", e);
+        tracing::error!("Error: {}", e);
         std::process::exit(1);
     }
 }

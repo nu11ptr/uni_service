@@ -41,15 +41,16 @@ edition = "2024"
 [dependencies]
 ctrlc.workspace = true
 tokio = { workspace = true, features = ["sync"], optional = true }
+tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-tracing.workspace = true
 uni_error.workspace = true
 windows-service.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt"] }
+tracing-subscriber.workspace = true
 
 [[example]]
 name = "axum"

@@ -681,6 +681,7 @@ dependencies = [
  "ctrlc",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "uni_error",
  "windows-service",
 ]
