@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! Universal service crate for building cross platform OS services
 
 mod base;
