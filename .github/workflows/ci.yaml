@@ -62,10 +62,10 @@ jobs:
             tool: cargo-nextest, cargo-llvm-cov
 
         - name: Run tests
-          run: cargo test
+          run: cargo test --workspace --all-features
 
         - name: Run tests with coverage
-          run: cargo llvm-cov nextest --output-path codecov.json --codecov
+          run: cargo llvm-cov nextest --output-path codecov.json --codecov --workspace --all-features
 
         - name: Upload coverage reports to Codecov
           uses: codecov/codecov-action@v5
@@ -81,4 +81,4 @@ jobs:
             echo "runner = 'sudo -E'" >> .cargo/config.toml
             echo '[target.aarch64-apple-darwin]' >> .cargo/config.toml
             echo "runner = 'sudo -E'" >> .cargo/config.toml
-            cargo test
+            cargo test --workspace --all-features
