@@ -37,7 +37,10 @@ fn test_service_interactive() {
     server.expect_message("starting", TIMEOUT).unwrap();
     server.expect_message("running", TIMEOUT).unwrap();
 
-    command.interrupt().unwrap();
+    // NOTE: We use `terminate` instead of `interrupt` because on Windows
+    // the latter sends a `CTRL_C_EVENT` signal to the process which is not handled
+    // by the `ctrlc` crate.
+    command.terminate().unwrap();
     server.expect_message("stopping", TIMEOUT).unwrap();
     server.expect_message("quitting", TIMEOUT).unwrap();
     server.expect_message("goodbye", TIMEOUT).unwrap();
