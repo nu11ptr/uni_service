@@ -3,6 +3,8 @@
 #[cfg(target_os = "macos")]
 mod launchd;
 mod manager;
+#[doc = include_str!("../README.md")]
+mod readme_tests {}
 #[cfg(windows)]
 mod sc;
 #[cfg(target_os = "linux")]

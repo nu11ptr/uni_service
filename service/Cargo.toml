@@ -27,3 +27,6 @@ tokio = { workspace = true, features = ["macros", "net", "rt"] }
 [[example]]
 name = "axum"
 required-features = ["tokio"]
+
+[package.metadata.docs.rs]
+all-features = true

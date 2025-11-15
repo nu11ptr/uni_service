@@ -1,6 +1,8 @@
 //! Universal service crate for building cross platform OS services
 
 mod base;
+#[doc = include_str!("../README.md")]
+mod readme_tests {}
 #[cfg(windows)]
 mod win_service;
 
