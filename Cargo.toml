@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["manager", "service", "test_bin"]
+members = ["manager", "test_bin"]
 
 [workspace.dependencies]
-uni_service = { path = "service" }
+uni_service = { path = "." }
 uni_service_manager = { path = "manager" }
 
 axum = { version = "0.8", features = [
@@ -24,3 +24,36 @@ tracing-subscriber = { version = "0.3", features = [
 ], default-features = false }
 uni_error = "0.4"
 windows-service = "0.8"
+
+[package]
+name = "uni_service"
+version = "0.1.0"
+authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "Universal service crate for building cross platform OS services"
+repository = "https://github.com/nu11ptr/uni_service"
+documentation = "https://docs.rs/uni_service"
+keywords = ["service", "daemon", "windows", "linux", "macos"]
+categories = ["api-bindings", "os"]
+readme = "README.md"
+edition = "2024"
+
+[dependencies]
+ctrlc.workspace = true
+tokio = { workspace = true, features = ["sync"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+tracing.workspace = true
+uni_error.workspace = true
+windows-service.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt"] }
+
+[[example]]
+name = "axum"
+required-features = ["tokio"]
+
+[package.metadata.docs.rs]
+all-features = true
