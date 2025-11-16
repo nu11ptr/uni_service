@@ -557,6 +557,26 @@ impl UniServiceManager {
         self.wait_for_status(ServiceStatus::Stopped, timeout)
     }
 
+    /// Stops the service, if needed, and then starts it again. The `timeout` is the maximum time to wait for
+    /// the service to reach the expected status of each operation. An error is returned if the service cannot
+    /// be stopped or started.
+    pub fn restart(&self, timeout: Duration) -> UniResult<(), ServiceErrKind> {
+        match self.stop_and_wait(timeout) {
+            // Just stopped
+            Ok(_) => self.start_and_wait(timeout),
+            // Already stopped
+            Err(err)
+                if matches!(
+                    err.kind_ref(),
+                    ServiceErrKind::WrongState(ServiceStatus::Stopped)
+                ) =>
+            {
+                self.start_and_wait(timeout)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Gets the current status of the service. It returns an error if the service is not installed
     /// or if the status cannot be determined.
     pub fn status(&self) -> UniResult<ServiceStatus, ServiceErrKind> {
