@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
+    fmt,
     path::PathBuf,
     thread,
     time::{Duration, Instant},
@@ -62,6 +63,22 @@ pub enum ServiceStatus {
     PausePending,
     /// The specified service is paused.
     Paused,
+}
+
+impl fmt::Display for ServiceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ServiceStatus::NotInstalled => "NOT_INSTALLED",
+            ServiceStatus::Stopped => "STOPPED",
+            ServiceStatus::StartPending => "START_PENDING",
+            ServiceStatus::StopPending => "STOP_PENDING",
+            ServiceStatus::Running => "RUNNING",
+            ServiceStatus::ContinuePending => "CONTINUE_PENDING",
+            ServiceStatus::PausePending => "PAUSE_PENDING",
+            ServiceStatus::Paused => "PAUSED",
+        };
+        write!(f, "{s}")
+    }
 }
 
 // *** Service Spec ***
