@@ -40,6 +40,13 @@ where
             is_service,
         }
     }
+
+    fn join_thread(&self, handle: JoinHandle<Result<()>>) -> Result<()> {
+        if let Err(err) = handle.join().map_err(|_| "Error joining thread")? {
+            tracing::error!("Service '{}' returned an error: {err}", self.name);
+        }
+        Ok(())
+    }
 }
 
 impl<F> BaseService<F, Receiver<()>>
@@ -105,13 +112,14 @@ where
                     "Service '{}' was already stopped (before we signalled it to do so).",
                     self.name
                 );
+                self.join_thread(handle)?;
                 Ok(())
             }
             Some(handle) => {
                 tracing::info!("Stopping service '{}'...", self.name);
                 (self.sender_fn)()?;
 
-                handle.join().map_err(|_| "Error joining thread")??;
+                self.join_thread(handle)?;
 
                 tracing::info!("Service '{}' is shut down.", self.name);
                 Ok(())
