@@ -10,7 +10,10 @@ mod win_service;
 
 pub use base::BaseService;
 
-use std::sync::mpsc::channel;
+use std::{
+    sync::mpsc::{Receiver, RecvTimeoutError, channel},
+    time::Duration,
+};
 
 #[cfg(windows)]
 use win_service::start_service;
@@ -29,6 +32,10 @@ pub trait ServiceApp {
 
     /// Called when the service is stopped. It should do any cleanup necessary and return.
     fn stop(self: Box<Self>) -> Result<()>;
+
+    /// Returns whether the service is currently running. If it returns `false`, the service
+    /// itself will be stopped.
+    fn is_running(&self) -> bool;
 }
 
 #[cfg(not(windows))]
@@ -38,7 +45,7 @@ fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
 
 fn run_interactive(mut app: Box<dyn ServiceApp + Send>) -> Result<()> {
     app.start()?;
-    wait_for_shutdown()?;
+    wait_for_shutdown(&*app)?;
     app.stop()?;
     Ok(())
 }
@@ -56,11 +63,22 @@ pub fn run_service(app: impl ServiceApp + Send + 'static, service_mode: bool) ->
     }
 }
 
-fn wait_for_shutdown() -> Result<()> {
+fn wait_for_shutdown(app: &dyn ServiceApp) -> Result<()> {
     let (tx, rx) = channel();
     ctrlc::set_handler(move || tx.send(()).expect("Could not send signal on channel."))?;
 
-    // Wait for termination signal
-    rx.recv()?;
+    // Wait for termination signal or service to exit
+    wait_for_shutdown_or_exit(rx, app)?;
+    Ok(())
+}
+
+fn wait_for_shutdown_or_exit(shutdown_rx: Receiver<()>, app: &dyn ServiceApp) -> Result<()> {
+    while app.is_running() {
+        match shutdown_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(_) => break,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(err) => return Err(err.into()),
+        }
+    }
     Ok(())
 }

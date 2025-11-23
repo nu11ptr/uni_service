@@ -136,6 +136,13 @@ impl ServiceApp for TestService {
 
         Ok(())
     }
+
+    fn is_running(&self) -> bool {
+        self.handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
+    }
 }
 
 impl Drop for TestService {

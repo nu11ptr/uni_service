@@ -127,4 +127,11 @@ where
             None => Err(format!("Thread handle not found for service '{}'.", self.name).into()),
         }
     }
+
+    fn is_running(&self) -> bool {
+        self.handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
+    }
 }

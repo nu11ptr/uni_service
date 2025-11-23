@@ -10,7 +10,7 @@ use windows_service::service::{
 use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::{define_windows_service, service_control_handler, service_dispatcher};
 
-use crate::{Result, ServiceApp};
+use crate::{Result, ServiceApp, wait_for_shutdown_or_exit};
 
 static SERVICE_APP: OnceLock<Mutex<Option<Box<dyn ServiceApp + Send>>>> = OnceLock::new();
 
@@ -114,7 +114,7 @@ fn run_service() -> Result<()> {
     status_handle.set_status(ServiceState::Running)?;
 
     tracing::debug!("Waiting for shutdown signal");
-    shutdown_rx.recv()?;
+    wait_for_shutdown_or_exit(shutdown_rx, &*app)?;
 
     tracing::debug!("Setting status to StopPending");
     status_handle.set_status(ServiceState::StopPending)?;
