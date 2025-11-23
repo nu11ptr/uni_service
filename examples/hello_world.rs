@@ -14,10 +14,7 @@ fn hello_service(shutdown: Receiver<()>, is_service: bool) -> uni_service::Resul
 }
 
 fn run() -> uni_service::Result<()> {
-    let service_mode = match std::env::args().nth(1).as_deref() {
-        Some("service") => true,
-        _ => false,
-    };
+    let service_mode = matches!(std::env::args().nth(1).as_deref(), Some("service"));
     let service = BaseService::new_sync("hello_world", hello_service, service_mode);
 
     run_service(service, service_mode)?;
