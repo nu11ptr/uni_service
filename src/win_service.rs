@@ -12,11 +12,11 @@ use windows_service::{define_windows_service, service_control_handler, service_d
 
 use crate::{Result, ServiceApp};
 
-static SERVICE_APP: OnceLock<Mutex<Box<dyn ServiceApp + Send>>> = OnceLock::new();
+static SERVICE_APP: OnceLock<Mutex<Option<Box<dyn ServiceApp + Send>>>> = OnceLock::new();
 
 pub(crate) fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
     let name = app.name().to_string();
-    if let Err(_) = SERVICE_APP.set(Mutex::new(app)) {
+    if SERVICE_APP.set(Mutex::new(Some(app))).is_err() {
         return Err(SimpleError::from_context(format!(
             "Only one service can be registered, and '{name}' already is",
         ))
@@ -105,6 +105,7 @@ fn run_service() -> Result<()> {
         .expect("Missing service app")
         .lock()
         .expect("Mutex poisoned");
+    let mut app = app.take().ok_or("Service app not found")?;
     tracing::debug!("Registering service control handler");
     let status_handle = ServiceControlHandler::register(app.name(), event_handler_fn)?;
 
