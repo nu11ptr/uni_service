@@ -28,15 +28,15 @@ pub trait ServiceApp {
     fn start(&mut self) -> Result<()>;
 
     /// Called when the service is stopped. It should do any cleanup necessary and return.
-    fn stop(&mut self) -> Result<()>;
+    fn stop(self: Box<Self>) -> Result<()>;
 }
 
 #[cfg(not(windows))]
-fn start_service(mut app: Box<dyn ServiceApp + Send>) -> Result<()> {
-    run_interactive(&mut *app)
+fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
+    run_interactive(app)
 }
 
-fn run_interactive(app: &mut (dyn ServiceApp + Send + 'static)) -> Result<()> {
+fn run_interactive(mut app: Box<dyn ServiceApp + Send>) -> Result<()> {
     app.start()?;
     wait_for_shutdown()?;
     app.stop()?;
@@ -46,11 +46,13 @@ fn run_interactive(app: &mut (dyn ServiceApp + Send + 'static)) -> Result<()> {
 // NOTE: Windows operates in two possible modes: regular or services mode. UNIX variants operate just in regular mode
 /// Executes a service. If being started by the service manager, `service_mode` must be `true`.
 /// If being started interactively, `service_mode` must be `false`.
-pub fn run_service(mut app: impl ServiceApp + Send + 'static, service_mode: bool) -> Result<()> {
+pub fn run_service(app: impl ServiceApp + Send + 'static, service_mode: bool) -> Result<()> {
+    let app = Box::new(app);
+
     if service_mode {
-        start_service(Box::new(app))
+        start_service(app)
     } else {
-        run_interactive(&mut app)
+        run_interactive(app)
     }
 }
 

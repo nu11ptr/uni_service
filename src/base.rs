@@ -89,7 +89,8 @@ where
     fn start(&mut self) -> Result<()> {
         tracing::info!("Starting service '{}'...", self.name);
 
-        let receiver = mem::take(&mut self.receiver).ok_or("Receiver not found")?;
+        let receiver = mem::take(&mut self.receiver)
+            .ok_or("Receiver not found (service might have been started twice)")?;
         let is_service = self.is_service;
         let service_fn = mem::take(&mut self.service_fn).ok_or("Service function not found")?;
 
@@ -97,17 +98,25 @@ where
         Ok(())
     }
 
-    fn stop(&mut self) -> Result<()> {
-        tracing::info!("Stopping service '{}'...", self.name);
+    fn stop(mut self: Box<Self>) -> Result<()> {
+        match mem::take(&mut self.handle) {
+            Some(handle) if handle.is_finished() => {
+                tracing::warn!(
+                    "Service '{}' was already stopped (before we signalled it to do so).",
+                    self.name
+                );
+                Ok(())
+            }
+            Some(handle) => {
+                tracing::info!("Stopping service '{}'...", self.name);
+                (self.sender_fn)()?;
 
-        (self.sender_fn)()?;
+                handle.join().map_err(|_| "Error joining thread")??;
 
-        let handle = mem::take(&mut self.handle);
-        if let Some(handle) = handle {
-            handle.join().map_err(|_| "Error joining thread")??;
+                tracing::info!("Service '{}' is shut down.", self.name);
+                Ok(())
+            }
+            None => Err(format!("Thread handle not found for service '{}'.", self.name).into()),
         }
-
-        tracing::info!("Service '{}' is shut down.", self.name);
-        Ok(())
     }
 }

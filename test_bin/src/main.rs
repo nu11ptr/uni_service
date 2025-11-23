@@ -124,7 +124,7 @@ impl ServiceApp for TestService {
         Ok(())
     }
 
-    fn stop(&mut self) -> uni_service::Result<()> {
+    fn stop(mut self: Box<Self>) -> uni_service::Result<()> {
         Self::send_message(self.client.as_ref(), "stopping", "Shutdown requested")?;
 
         self.sender.send(())?;
