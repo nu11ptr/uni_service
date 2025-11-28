@@ -1,6 +1,6 @@
 [package]
 name = "uni_service_manager"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "A crate for for managing cross platform OS services"
