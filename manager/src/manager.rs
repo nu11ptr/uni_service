@@ -8,7 +8,7 @@ use std::{
 };
 
 use bitflags::bitflags;
-use uni_error::{ErrorContext as _, UniError, UniKind, UniResult};
+use uni_error::{Cause, ErrorContext as _, UniError, UniKind, UniResult};
 
 #[cfg(target_os = "macos")]
 use crate::launchd::capabilities;
@@ -319,7 +319,7 @@ pub enum ServiceErrKind {
 }
 
 impl UniKind for ServiceErrKind {
-    fn context(&self) -> Option<Cow<'static, str>> {
+    fn context(&self, _cause: Option<Cause<'_>>) -> Option<Cow<'static, str>> {
         Some(match self {
             ServiceErrKind::ServiceManagementNotAvailable => {
                 "Service management is not available on this platform".into()
