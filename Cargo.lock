@@ -675,7 +675,7 @@ checksum = "f7c9896be3b6e5e87a391e5513b5f456fbb847bb146ddfc71564bad71518737c"
 
 [[package]]
 name = "uni_service"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "axum",
  "ctrlc",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "uni_service_manager"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bitflags",
  "dirs",
