@@ -22,12 +22,12 @@ tracing-subscriber = { version = "0.3", features = [
     "fmt",
     "std",
 ], default-features = false }
-uni_error = "0.7"
+uni_error = "0.8"
 windows-service = "0.8"
 
 [package]
 name = "uni_service"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Scott Meeuwsen <smeeuwsen@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "Universal service crate for building cross platform OS services"
