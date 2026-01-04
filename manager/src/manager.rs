@@ -8,7 +8,7 @@ use std::{
 };
 
 use bitflags::bitflags;
-use uni_error::{Cause, ErrorContext as _, UniError, UniKind, UniResult};
+use uni_error::{Cause, UniError, UniKind, UniResult};
 
 #[cfg(target_os = "macos")]
 use crate::launchd::capabilities;

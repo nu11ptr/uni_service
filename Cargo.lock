@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "uni_service_manager"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "bitflags",
  "dirs",
