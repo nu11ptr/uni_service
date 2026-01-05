@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use uni_error::{ResultContext as _, UniError, UniKind as _, UniResult};
+use uni_error::*;
 
 use crate::manager::{ServiceManager, ServiceStatus};
 use crate::unix_util::{SERVICE_PERMS, write_file};

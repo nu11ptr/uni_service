@@ -3,7 +3,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-use uni_error::{ResultContext as _, UniResult};
+use uni_error::*;
 
 use crate::ServiceErrKind;
 

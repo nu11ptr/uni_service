@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 
-use uni_error::{UniKind as _, UniResult};
+use uni_error::*;
 
 use crate::ServiceErrKind;
 
