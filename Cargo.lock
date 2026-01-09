@@ -669,13 +669,13 @@ dependencies = [
 
 [[package]]
 name = "uni_error"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "563f1928a85c5eaba35bd22bc618926f0c679b38f1632436f313d7635517aea0"
+checksum = "9f2f2fb7db84fc2547f399622c38dde5bf37e4a924444285d57b6aad1c6b6e37"
 
 [[package]]
 name = "uni_service"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "axum",
  "ctrlc",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "uni_service_manager"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "bitflags",
  "dirs",
