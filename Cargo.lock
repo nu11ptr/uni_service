@@ -675,7 +675,7 @@ checksum = "9f2f2fb7db84fc2547f399622c38dde5bf37e4a924444285d57b6aad1c6b6e37"
 
 [[package]]
 name = "uni_service"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "axum",
  "ctrlc",

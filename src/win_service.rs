@@ -17,7 +17,7 @@ static SERVICE_APP: OnceLock<Mutex<Option<Box<dyn ServiceApp + Send>>>> = OnceLo
 pub(crate) fn start_service(app: Box<dyn ServiceApp + Send>) -> Result<()> {
     let name = app.name().to_string();
     if SERVICE_APP.set(Mutex::new(Some(app))).is_err() {
-        return Err(SimpleError::from_context(format!(
+        return Err(SimpleError::from_kind_default_context(format!(
             "Only one service can be registered, and '{name}' already is",
         ))
         .into());
